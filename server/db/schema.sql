@@ -272,6 +272,20 @@ CREATE INDEX IF NOT EXISTS idx_gym_sets_workout ON gym_sets(workout_id);
 CREATE INDEX IF NOT EXISTS idx_gym_sets_exercise ON gym_sets(exercise_id);
 CREATE INDEX IF NOT EXISTS idx_gym_workouts_date ON gym_workouts(date);
 
+-- "I'm Bored" list: a user-curated list of things to come back to (learn chess,
+-- a side idea, self-improvement). NOT auto-generated. Each item has a rich body.
+CREATE TABLE IF NOT EXISTS bored_items (
+  id            TEXT PRIMARY KEY,
+  title         TEXT NOT NULL,
+  emoji         TEXT,
+  category      TEXT,                            -- learn | project | fun | improve | other
+  body          TEXT NOT NULL DEFAULT '',        -- TipTap JSON (stringified)
+  done          INTEGER NOT NULL DEFAULT 0,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(start);
