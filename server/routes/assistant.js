@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { runAssistant, assistantConfigured } from '../lib/assistant.js'
+import { runAssistant, assistantConfigured } from '../lib/assistant/index.js'
 import { httpError } from '../lib/http.js'
 
 const router = Router()

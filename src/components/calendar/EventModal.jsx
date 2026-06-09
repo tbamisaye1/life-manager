@@ -20,9 +20,16 @@ const DEFAULT_COLOR = 'blue'
 /**
  * Create or edit an event. Parent passes `key={event?.id ?? 'new'}` for clean
  * remount per event. When `event` is null, `prefillDate` seeds the start field.
- * Props: event (null = create), prefillDate (Date|null), prefillStart (ISO string with time, e.g. "2026-06-09T14:00"), open, onClose
+ * Props:
+ *   event        – null = create mode
+ *   prefillDate  – Date|null — seeds date when no time info
+ *   prefillStart – ISO datetime string (e.g. "2026-06-09T14:00")
+ *   prefillEnd   – ISO datetime string (optional); when provided with prefillStart,
+ *                  seeds the end field and forces all_day=false (backward-compatible:
+ *                  omitting it preserves prior behavior)
+ *   open, onClose
  */
-export function EventModal({ event, prefillDate, prefillStart, open, onClose }) {
+export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open, onClose }) {
   const isEditing = !!event
 
   // prefillStart (ISO with time) takes priority over prefillDate for timed events
@@ -42,7 +49,10 @@ export function EventModal({ event, prefillDate, prefillStart, open, onClose }) 
     : {
         title: '',
         start: hasPrefillTime ? prefillStart.slice(0, 16) : (prefillDate ? dateToDate(prefillDate) : ''),
-        end: hasPrefillTime ? prefillStart.slice(0, 16) : (prefillDate ? dateToDate(prefillDate) : ''),
+        // Use prefillEnd when provided (drag-to-create); otherwise fall back to same as start
+        end: hasPrefillTime
+          ? (prefillEnd ? prefillEnd.slice(0, 16) : prefillStart.slice(0, 16))
+          : (prefillDate ? dateToDate(prefillDate) : ''),
         all_day: hasPrefillTime ? false : true,
         location: '',
         notes: '',
