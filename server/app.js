@@ -22,6 +22,7 @@ import favorites from './routes/favorites.js'
 import integrations from './routes/integrations.js'
 import boredItems from './routes/boredItems.js'
 import search from './routes/search.js'
+import assistant from './routes/assistant.js'
 import dashboard from './routes/dashboard.js'
 
 // One-time DB init per process (works for both `node` and serverless cold starts).
@@ -63,6 +64,7 @@ app.use('/api/favorites', favorites)
 app.use('/api/integrations', integrations)
 app.use('/api/bored-items', boredItems)
 app.use('/api/search', search)
+app.use('/api/assistant', assistant)
 app.use('/api', dashboard)
 
 app.use(errorMiddleware)

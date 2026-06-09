@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import TodayPage from './pages/TodayPage'
 import CalendarPage from './pages/CalendarPage'
+import DailySchedulePage from './pages/DailySchedulePage'
+import AssistantPage from './pages/AssistantPage'
 import TasksPage from './pages/TasksPage'
 import PrioritiesPage from './pages/PrioritiesPage'
 import BoredPage from './pages/BoredPage'
@@ -25,6 +27,8 @@ function App() {
         <Route index element={<Navigate to="/today" replace />} />
         <Route path="/today" element={<TodayPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/schedule" element={<DailySchedulePage />} />
+        <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/priorities" element={<PrioritiesPage />} />
         <Route path="/bored" element={<BoredPage />} />
