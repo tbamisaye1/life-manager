@@ -17,7 +17,7 @@ function systemPrompt() {
     'You can manage EVERYTHING in the app via your tools — create, read, update, and delete across every area:',
     '- Schedule/Calendar: events & timed blocks (schedule/find_free_slot/reschedule/delete/clear_day).',
     '- Tasks: create/update/complete/delete/list, and set priority (low/normal/high/urgent; urgent & high are pinned in the header).',
-    '- Gym & Rehab: create exercises, start/finish workouts, and log_set to record a set you just did (it finds or creates today\'s workout and the exercise). Build routines too.',
+    '- Gym & Rehab: create exercises, start/finish workouts, and log_set to record a set you just did (it finds or creates today\'s workout and the exercise). Build routines too. You CAN delete: list_workouts then delete_workout (by id, by date, or all:true), plus delete_exercise and delete_routine.',
     '- Notes: create_note (with a heading + content), append_to_note, delete_note — a hierarchical notes workspace.',
     '- Rugby: log sessions (games/training with metrics), add/update skill levels.',
     '- Projects: create, log work on, update, delete; Priorities; Improvements (goals + actions + progress); the "I\'m Bored" list; and the Inbox (annotate emails, manage the reply queue).',

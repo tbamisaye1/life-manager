@@ -408,6 +408,105 @@ export function buildGymTools({ record }) {
     },
   )
 
+  // -------------------------------------------------------------------------
+  // list_workouts
+  // -------------------------------------------------------------------------
+  const listWorkouts = tool(
+    async ({ from, to, limit }) => {
+      let rows
+      if (from && to) {
+        rows = await db
+          .prepare('SELECT id, date, title, completed FROM gym_workouts WHERE date >= ? AND date <= ? ORDER BY date DESC, created_at DESC')
+          .all(from, to)
+      } else {
+        rows = await db
+          .prepare('SELECT id, date, title, completed FROM gym_workouts ORDER BY date DESC, created_at DESC LIMIT ?')
+          .all(limit ?? 50)
+      }
+      return JSON.stringify({ ok: true, workouts: rows })
+    },
+    {
+      name: 'list_workouts',
+      description: 'List workouts (most recent first) with their ids — use before deleting. Optionally bound by a date range.',
+      schema: z.object({
+        from: z.string().optional().describe('YYYY-MM-DD inclusive'),
+        to: z.string().optional().describe('YYYY-MM-DD inclusive'),
+        limit: z.number().int().optional().describe('Max rows when no range given (default 50)'),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // delete_workout — by id, by date, or all. Cascades to its sets.
+  // -------------------------------------------------------------------------
+  const deleteWorkout = tool(
+    async ({ workout_id, date, all }) => {
+      let rows
+      if (workout_id) {
+        rows = await db.prepare('SELECT id FROM gym_workouts WHERE id = ?').all(workout_id)
+      } else if (date) {
+        rows = await db.prepare('SELECT id FROM gym_workouts WHERE date = ?').all(date)
+      } else if (all) {
+        rows = await db.prepare('SELECT id FROM gym_workouts').all()
+      } else {
+        return JSON.stringify({ ok: false, message: 'Provide workout_id, date, or all:true.' })
+      }
+      if (rows.length === 0) return JSON.stringify({ ok: false, message: 'No matching workouts found.' })
+      for (const r of rows) await db.prepare('DELETE FROM gym_workouts WHERE id = ?').run(r.id)
+      record(`🗑️ Deleted ${rows.length} workout${rows.length === 1 ? '' : 's'}`)
+      return JSON.stringify({ ok: true, deleted: rows.length })
+    },
+    {
+      name: 'delete_workout',
+      description: 'Delete workouts (and their logged sets). Target ONE of: workout_id, date (all workouts that day), or all:true (every workout). Use list_workouts first to confirm.',
+      schema: z.object({
+        workout_id: z.string().optional(),
+        date: z.string().optional().describe('YYYY-MM-DD — delete every workout on this date'),
+        all: z.boolean().optional().describe('Delete ALL workouts'),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // delete_exercise — by name. Cascades to its sets + routine links.
+  // -------------------------------------------------------------------------
+  const deleteExercise = tool(
+    async ({ exercise_name }) => {
+      const exercise = await db
+        .prepare('SELECT id, name FROM gym_exercises WHERE name ILIKE ? LIMIT 1')
+        .get(`%${exercise_name}%`)
+      if (!exercise) return JSON.stringify({ ok: false, message: `No exercise matching "${exercise_name}".` })
+      await db.prepare('DELETE FROM gym_exercises WHERE id = ?').run(exercise.id)
+      record(`🗑️ Deleted exercise "${exercise.name}"`)
+      return JSON.stringify({ ok: true, id: exercise.id, name: exercise.name })
+    },
+    {
+      name: 'delete_exercise',
+      description: 'Delete an exercise (resolved by name ILIKE) from the library, along with its logged sets and routine links.',
+      schema: z.object({ exercise_name: z.string() }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // delete_routine — by name.
+  // -------------------------------------------------------------------------
+  const deleteRoutine = tool(
+    async ({ routine_name }) => {
+      const routine = await db
+        .prepare('SELECT id, name FROM gym_routines WHERE name ILIKE ? LIMIT 1')
+        .get(`%${routine_name}%`)
+      if (!routine) return JSON.stringify({ ok: false, message: `No routine matching "${routine_name}".` })
+      await db.prepare('DELETE FROM gym_routines WHERE id = ?').run(routine.id)
+      record(`🗑️ Deleted routine "${routine.name}"`)
+      return JSON.stringify({ ok: true, id: routine.id, name: routine.name })
+    },
+    {
+      name: 'delete_routine',
+      description: 'Delete a routine (resolved by name ILIKE). Does not delete the exercises themselves.',
+      schema: z.object({ routine_name: z.string() }),
+    },
+  )
+
   return [
     listExercises,
     createExercise,
@@ -418,5 +517,9 @@ export function buildGymTools({ record }) {
     addExerciseToRoutine,
     startWorkout,
     finishWorkout,
+    listWorkouts,
+    deleteWorkout,
+    deleteExercise,
+    deleteRoutine,
   ]
 }
