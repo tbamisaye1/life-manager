@@ -29,3 +29,13 @@ export function useCreateSkill() {
   const client = useQueryClient()
   return useMutation({ mutationFn: (body) => api.post('/rugby/skills', body), onSuccess: () => invalidate(client) })
 }
+
+export function useDeleteSession() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (id) => api.del(`/rugby/sessions/${id}`), onSuccess: () => invalidate(client) })
+}
+
+export function useDeleteSkill() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (id) => api.del(`/rugby/skills/${id}`), onSuccess: () => invalidate(client) })
+}

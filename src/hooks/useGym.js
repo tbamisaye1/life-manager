@@ -62,6 +62,14 @@ export function useWorkouts(date) {
   return useQuery({ queryKey: keys.workouts(date), queryFn: () => api.get(path) })
 }
 
+export function useWorkoutsRange(from, to) {
+  return useQuery({
+    queryKey: ['gym', 'workouts', { from, to }],
+    queryFn: () => api.get(`/gym/workouts?from=${from}&to=${to}`),
+    enabled: !!from && !!to,
+  })
+}
+
 // ─── Exercise mutations ───────────────────────────────────────────────────────
 export function useCreateExercise() {
   const client = useQueryClient()

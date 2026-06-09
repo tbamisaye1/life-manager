@@ -1,78 +1,111 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react'
-import { Button, Card, Loading, ErrorState, EmptyState } from '../components/ui'
-import { useBored } from '../hooks/resources'
-
-const KIND_LABEL = {
-  improvement: 'Toward a goal',
-  priority: 'Daily priority',
-  project: 'Project check-in',
-  email: 'Reply owed',
-}
+import { Sparkles, Plus, Shuffle, FileText, ArrowRight } from 'lucide-react'
+import { PageHeader, Button, Card, Input, Loading, ErrorState, EmptyState } from '../components/ui'
+import { BoredItemRow } from '../components/bored/BoredItemRow'
+import { BoredItemModal } from '../components/bored/BoredItemModal'
+import { boredItems as boredResource, useFocusPages } from '../hooks/resources'
 
 export default function BoredPage() {
-  const { data, isLoading, isError, refetch, isFetching } = useBored()
+  const { data: items = [], isLoading, isError, refetch } = boredResource.useList()
+  const { data: bored } = useFocusPages()
+  const create = boredResource.useCreate()
+  const update = boredResource.useUpdate()
+  const remove = boredResource.useRemove()
+  const [adding, setAdding] = useState('')
+  const [editing, setEditing] = useState(undefined) // undefined=closed, null=new, obj=edit
+  const [picked, setPicked] = useState(null)
 
-  if (isLoading) return <Loading label="Thinking of something useful…" />
-  if (isError) return <ErrorState message="Couldn't load suggestions" onRetry={refetch} />
+  if (isLoading) return <Loading label="Loading your list…" />
+  if (isError) return <ErrorState message="Couldn't load your list" onRetry={refetch} />
 
-  const suggestions = data?.suggestions || []
-  const [primary, ...rest] = suggestions
+  const open = items.filter((i) => !i.done)
+  const done = items.filter((i) => i.done)
+  const focusPages = bored?.focusPages || []
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!adding.trim()) return
+    create.mutate({ title: adding.trim() })
+    setAdding('')
+  }
+  const toggle = (i) => update.mutate({ id: i.id, done: !i.done })
+  const pickOne = () => {
+    if (!open.length) return
+    setPicked(open[Math.floor(Math.random() * open.length)].id)
+  }
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-8 text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-100 text-accent-600">
-          <Sparkles className="h-6 w-6" />
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Bored? Do this.</h1>
-        <p className="mt-1 text-sm text-zinc-500">A useful, goal-aligned thing to spend the next chunk of time on.</p>
-      </div>
+      <PageHeader
+        title="I'm Bored"
+        subtitle="Your own list of things to come back to — learn, build, improve."
+        icon={Sparkles}
+        actions={open.length > 0 && (
+          <Button onClick={pickOne}><Shuffle className="h-4 w-4" /> Pick one for me</Button>
+        )}
+      />
 
-      {!primary ? (
-        <EmptyState icon={Sparkles} title="You're all caught up" description="No suggestions right now — enjoy the breather." />
+      <form onSubmit={submit} className="mb-5 flex gap-2">
+        <Input value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Add something you want to do later…" />
+        <Button variant="primary" type="submit" disabled={!adding.trim()}><Plus className="h-4 w-4" /> Add</Button>
+      </form>
+
+      {items.length === 0 ? (
+        <EmptyState
+          icon={Sparkles}
+          title="Your list is empty"
+          description="Add things you'd want to pick up when you have a free moment — “learn chess”, a side project, a skill to sharpen."
+        />
       ) : (
-        <>
-          <Card className="bg-gradient-to-br from-accent-50 to-white p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-accent-600">{KIND_LABEL[primary.kind]}</p>
-            <div className="mt-2 flex items-start gap-3">
-              <span className="text-3xl">{primary.emoji}</span>
-              <div className="min-w-0">
-                <h2 className="text-xl font-semibold text-zinc-900">{primary.title}</h2>
-                <p className="mt-1 text-sm text-zinc-500">{primary.context}</p>
-              </div>
-            </div>
-            <div className="mt-5 flex items-center gap-2">
-              <Link to={primary.link}>
-                <Button variant="primary">Let's go <ArrowRight className="h-4 w-4" /></Button>
-              </Link>
-              <Button onClick={() => refetch()} disabled={isFetching}>
-                <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Something else
-              </Button>
+        <div className="space-y-5">
+          <Card className="overflow-hidden">
+            <div className="divide-y divide-zinc-100">
+              {open.map((i) => (
+                <BoredItemRow key={i.id} item={i} onToggle={toggle} onOpen={setEditing} onDelete={remove.mutate} highlighted={picked === i.id} />
+              ))}
+              {open.length === 0 && <div className="px-3 py-6 text-center text-sm text-zinc-400">Everything's checked off 🎉</div>}
             </div>
           </Card>
 
-          {rest.length > 0 && (
-            <div className="mt-6">
-              <p className="mb-2 px-1 text-sm font-semibold text-zinc-500">Or maybe…</p>
-              <div className="space-y-2">
-                {rest.map((s, i) => (
-                  <Link key={i} to={s.link}>
-                    <Card interactive className="flex items-center gap-3 p-4">
-                      <span className="text-xl">{s.emoji}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-zinc-800">{s.title}</p>
-                        <p className="truncate text-xs text-zinc-400">{s.context}</p>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-zinc-300" />
-                    </Card>
-                  </Link>
-                ))}
-              </div>
+          {done.length > 0 && (
+            <div>
+              <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Done</p>
+              <Card className="overflow-hidden opacity-70">
+                <div className="divide-y divide-zinc-100">
+                  {done.map((i) => (
+                    <BoredItemRow key={i.id} item={i} onToggle={toggle} onOpen={setEditing} onDelete={remove.mutate} />
+                  ))}
+                </div>
+              </Card>
             </div>
           )}
-        </>
+        </div>
       )}
+
+      {focusPages.length > 0 && (
+        <div className="mt-8">
+          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Flagged pages</p>
+          <div className="space-y-2">
+            {focusPages.map((p) => (
+              <Link key={p.id} to={`/notes/${p.id}`}>
+                <Card interactive className="flex items-center gap-3 p-3">
+                  <span className="text-lg">{p.icon || <FileText className="h-4 w-4 text-zinc-400" />}</span>
+                  <span className="flex-1 truncate text-sm font-medium text-zinc-700">{p.title}</span>
+                  <ArrowRight className="h-4 w-4 text-zinc-300" />
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <BoredItemModal
+        key={editing === undefined ? 'closed' : editing?.id || 'new'}
+        item={editing}
+        open={editing !== undefined}
+        onClose={() => setEditing(undefined)}
+      />
     </div>
   )
 }

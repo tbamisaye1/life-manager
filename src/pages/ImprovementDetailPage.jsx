@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Target } from 'lucide-react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Plus, Trash2, Target, Pencil } from 'lucide-react'
 import { Card, CardBody, Button, Input, Checkbox, ProgressBar, Badge, Loading, ErrorState, IconButton } from '../components/ui'
+import { ImprovementEditModal } from '../components/improvements/ImprovementEditModal'
 import { useImprovement, useImprovementActions } from '../hooks/useImprovement'
 import { improvements as improvementsResource } from '../hooks/resources'
 
 export default function ImprovementDetailPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { data: im, isLoading, isError, refetch } = useImprovement(id)
   const update = improvementsResource.useUpdate()
+  const remove = improvementsResource.useRemove()
   const actions = useImprovementActions(id)
   const [newAction, setNewAction] = useState('')
+  const [editing, setEditing] = useState(false)
 
   if (isLoading) return <Loading label="Loading goal…" />
   if (isError || !im) return <ErrorState message="Couldn't load this goal" onRetry={refetch} />
@@ -27,17 +31,28 @@ export default function ImprovementDetailPage() {
     setNewAction('')
   }
 
+  const del = async () => {
+    await remove.mutateAsync(im.id)
+    navigate('/improvements')
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
       <Link to="/improvements" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800 focus-ring">
         <ArrowLeft className="h-4 w-4" /> Improvements
       </Link>
 
-      <div className="mb-6 flex items-start gap-3">
-        <span className="text-4xl">{im.emoji}</span>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{im.title}</h1>
-          {im.category && <Badge tone="accent" className="mt-1.5 capitalize">{im.category}</Badge>}
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="text-4xl">{im.emoji}</span>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900">{im.title}</h1>
+            {im.category && <Badge tone="accent" className="mt-1.5 capitalize">{im.category}</Badge>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton label="Edit goal" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /></IconButton>
+          <IconButton label="Delete goal" onClick={del}><Trash2 className="h-4 w-4" /></IconButton>
         </div>
       </div>
 
@@ -88,6 +103,8 @@ export default function ImprovementDetailPage() {
           <Button variant="primary" type="submit" disabled={!newAction.trim()}><Plus className="h-4 w-4" /></Button>
         </form>
       </Card>
+
+      <ImprovementEditModal key={im.id} improvement={im} open={editing} onClose={() => setEditing(false)} />
     </div>
   )
 }
