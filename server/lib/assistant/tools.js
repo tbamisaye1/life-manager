@@ -2,61 +2,18 @@ import { tool } from '@langchain/core/tools'
 import { z } from 'zod'
 import { db } from '../../db/index.js'
 import { newId, now, localDateStr } from '../helpers.js'
-
-// We work in local wall-clock time throughout — "3pm" means 3pm to the user.
-const pad = (n) => String(n).padStart(2, '0')
-const minutesToIso = (date, mins) => `${date}T${pad(Math.floor(mins / 60))}:${pad(mins % 60)}:00`
-const minutesIntoDay = (iso) => { const d = new Date(iso); return d.getHours() * 60 + d.getMinutes() }
-const addMinutes = (iso, mins) => {
-  const d = new Date(iso)
-  d.setMinutes(d.getMinutes() + mins)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`
-}
-
-// Look for the first open gap of `duration` minutes on a day, scanning that
-// day's timed events between the earliest/latest bounds.
-// Parse "HH:mm" to minutes, falling back to a default if malformed.
-const parseClock = (value, fallback) => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(value || '')
-  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback
-}
-
-async function firstFreeSlot(date, duration, earliest, latest) {
-  const dayEnd = parseClock(latest, 22 * 60)
-  let cursor = parseClock(earliest, 8 * 60)
-
-  const events = await db
-    .prepare('SELECT start, "end" FROM events WHERE all_day = 0 AND substr(start,1,10) = ? ORDER BY start')
-    .all(date)
-  const busy = events
-    .map((e) => {
-      const start = minutesIntoDay(e.start)
-      // An end on a later day (or missing) clamps to end-of-day so it still blocks time.
-      let end = e.end ? minutesIntoDay(e.end) : start + 60
-      if (end <= start) end = 24 * 60
-      return { start, end }
-    })
-    .sort((a, b) => a.start - b.start)
-
-  for (const block of busy) {
-    if (block.start - cursor >= duration) break
-    if (block.end > cursor) cursor = block.end
-  }
-  if (cursor + duration > dayEnd) return null
-  return { start: minutesToIso(date, cursor), end: minutesToIso(date, cursor + duration) }
-}
-
-async function resolveProjectId(name) {
-  if (!name) return null
-  const row = await db
-    .prepare('SELECT id FROM projects WHERE name ILIKE ? OR short_code ILIKE ? LIMIT 1')
-    .get(`%${name}%`, `%${name}%`)
-  return row?.id ?? null
-}
+import { firstFreeSlot, addMinutes, resolveProjectId } from './tools-shared.js'
+import { buildGymTools } from './tools-gym.js'
+import { buildNotesTools } from './tools-notes.js'
+import { buildRugbyTools } from './tools-rugby.js'
+import { buildProjectTools } from './tools-projects.js'
+import { buildListTools } from './tools-lists.js'
+import { buildInboxTools } from './tools-inbox.js'
 
 /**
- * Build the agent's toolset. Each tool that changes something calls `record`
- * with a short human-readable line, which the UI shows as a confirmation chip.
+ * Build the agent's full toolset. Each tool that changes something calls
+ * `record` with a short human-readable line, which the UI shows as a chip.
+ * Schedule + task tools live here; the rest are grouped into domain modules.
  */
 export function buildTools(record) {
   const getSchedule = tool(
@@ -168,26 +125,72 @@ export function buildTools(record) {
     },
   )
 
-  const addToBoredList = tool(
-    async ({ title, category }) => {
-      const ts = now()
-      const id = newId()
-      const max = (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM bored_items').get()).m
-      await db
-        .prepare(`INSERT INTO bored_items (id,title,emoji,category,body,done,sort_order,created_at,updated_at)
-          VALUES (@id,@title,'💡',@category,'',0,@ord,@ts,@ts)`)
-        .run({ id, title, category: category || 'other', ord: Number(max) + 1, ts })
-      record(`💡 Added “${title}” to your Bored list`)
-      return JSON.stringify({ ok: true, id, title })
+  // Shared title-fragment matcher: find one task whose title contains all words.
+  const findTask = (title, openOnly) => {
+    const words = title.trim().split(/\s+/).filter(Boolean).slice(0, 6)
+    const clause = words.map(() => 'title ILIKE ?').join(' AND ') || 'title ILIKE ?'
+    const params = words.length ? words.map((w) => `%${w}%`) : [`%${title}%`]
+    const guard = openOnly ? "status != 'done' AND " : ''
+    return db.prepare(`SELECT id, title FROM tasks WHERE ${guard}${clause} ORDER BY created_at DESC LIMIT 1`).get(...params)
+  }
+
+  const updateTask = tool(
+    async ({ title, new_title, due_date, priority, status }) => {
+      const task = await findTask(title, false)
+      if (!task) return JSON.stringify({ ok: false, message: `No task matching "${title}".` })
+      const sets = []
+      const p = { id: task.id, ts: now() }
+      if (new_title) { sets.push('title = @title'); p.title = new_title }
+      if (due_date !== undefined) { sets.push('due_date = @due'); p.due = due_date || null }
+      if (priority) { sets.push('priority = @priority'); p.priority = priority }
+      if (status) { sets.push('status = @status'); p.status = status; if (status === 'done') sets.push('completed_at = @ts') }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated “${task.title}”`)
+      return JSON.stringify({ ok: true, id: task.id })
     },
     {
-      name: 'add_to_bored_list',
-      description: "Add something to the user's 'I'm Bored' list to come back to later.",
+      name: 'update_task',
+      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, or status.',
       schema: z.object({
-        title: z.string(),
-        category: z.enum(['learn', 'project', 'improve', 'fun', 'other']).optional(),
+        title: z.string().describe('part of the task title to find it'),
+        new_title: z.string().optional(),
+        due_date: z.string().optional(),
+        priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+        status: z.enum(['todo', 'doing', 'done']).optional(),
       }),
     },
+  )
+
+  const completeTask = tool(
+    async ({ title }) => {
+      const task = await findTask(title, true)
+      if (!task) return JSON.stringify({ ok: false, message: `No open task matching "${title}".` })
+      await db.prepare("UPDATE tasks SET status = 'done', completed_at = @ts, updated_at = @ts WHERE id = @id").run({ id: task.id, ts: now() })
+      record(`✅ Completed “${task.title}”`)
+      return JSON.stringify({ ok: true, id: task.id })
+    },
+    { name: 'complete_task', description: 'Mark an open task done, found by a title fragment.', schema: z.object({ title: z.string() }) },
+  )
+
+  const deleteTask = tool(
+    async ({ title }) => {
+      const task = await findTask(title, false)
+      if (!task) return JSON.stringify({ ok: false, message: `No task matching "${title}".` })
+      await db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id)
+      record(`🗑️ Deleted task “${task.title}”`)
+      return JSON.stringify({ ok: true, id: task.id })
+    },
+    { name: 'delete_task', description: 'Delete a task found by a title fragment.', schema: z.object({ title: z.string() }) },
+  )
+
+  const listTasks = tool(
+    async ({ filter }) => {
+      const where = filter === 'open' ? "WHERE status != 'done'" : filter === 'done' ? "WHERE status = 'done'" : ''
+      const rows = await db.prepare(`SELECT id, title, status, due_date, priority FROM tasks ${where} ORDER BY (due_date IS NULL), due_date LIMIT 50`).all()
+      return JSON.stringify({ tasks: rows })
+    },
+    { name: 'list_tasks', description: 'List tasks (filter: open | done | all) to see what exists.', schema: z.object({ filter: z.enum(['open', 'done', 'all']).optional() }) },
   )
 
   const deleteEvent = tool(
@@ -236,5 +239,17 @@ export function buildTools(record) {
     },
   )
 
-  return [getSchedule, findFreeSlot, scheduleEvent, deleteEvent, clearDay, rescheduleEvent, createTask, setTaskPriority, addToBoredList]
+  return [
+    // Schedule / calendar
+    getSchedule, findFreeSlot, scheduleEvent, deleteEvent, clearDay, rescheduleEvent,
+    // Tasks
+    createTask, updateTask, completeTask, deleteTask, setTaskPriority, listTasks,
+    // Everything else, by domain
+    ...buildGymTools({ record }),
+    ...buildNotesTools({ record }),
+    ...buildRugbyTools({ record }),
+    ...buildProjectTools({ record }),
+    ...buildListTools({ record }),
+    ...buildInboxTools({ record }),
+  ]
 }
