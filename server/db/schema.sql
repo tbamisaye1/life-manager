@@ -188,6 +188,23 @@ CREATE TABLE IF NOT EXISTS integration_accounts (
   last_synced_at TEXT
 );
 
+-- Hierarchical pages: the OneNote/Notion-style notes workspace. A page can hold
+-- subpages to any depth (parent_id self-reference). body is TipTap JSON (string).
+CREATE TABLE IF NOT EXISTS pages (
+  id            TEXT PRIMARY KEY,
+  parent_id     TEXT REFERENCES pages(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL DEFAULT 'Untitled',
+  icon          TEXT,                            -- emoji
+  color         TEXT,                            -- optional accent for top sections
+  body          TEXT NOT NULL DEFAULT '',        -- TipTap JSON (stringified)
+  is_focus      INTEGER NOT NULL DEFAULT 0,      -- surface in the "Bored / Focus" list
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  archived      INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(start);

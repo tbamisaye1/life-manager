@@ -22,7 +22,7 @@ const ts = now()
 const tables = [
   'improvement_actions', 'improvements', 'tasks', 'events', 'priorities',
   'notes', 'emails', 'reply_queue', 'rugby_sessions', 'rugby_skills',
-  'favorites', 'recents', 'projects',
+  'favorites', 'recents', 'projects', 'pages',
 ]
 
 const seeded = db.prepare('SELECT COUNT(*) c FROM projects').get().c > 0
@@ -210,6 +210,46 @@ const favorites = [
 ]
 const insFav = db.prepare(`INSERT INTO favorites (id,label,icon,path,sort_order,created_at) VALUES (@id,@label,@icon,@path,@ord,@ts)`)
 for (const f of favorites) insFav.run({ id: newId(), label: f.label, icon: f.icon, path: f.path, ord: f.ord, ts })
+
+// ---------------- Pages (OneNote/Notion-style workspace) ----------------
+const para = (text) => ({ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] })
+const heading = (text, level = 2) => ({ type: 'heading', attrs: { level }, content: [{ type: 'text', text }] })
+const bullets = (items) => ({ type: 'bulletList', content: items.map((t) => ({ type: 'listItem', content: [para(t)] })) })
+const checks = (items) => ({ type: 'taskList', content: items.map(([t, done]) => ({ type: 'taskItem', attrs: { checked: !!done }, content: [para(t)] })) })
+const docOf = (...nodes) => JSON.stringify({ type: 'doc', content: nodes })
+
+let pageOrder = 0
+const insPage = db.prepare(`INSERT INTO pages (id,parent_id,title,icon,color,body,is_focus,sort_order,archived,created_at,updated_at)
+  VALUES (@id,@parent,@title,@icon,@color,@body,@focus,@ord,0,@ts,@ts)`)
+const addPage = ({ parent = null, title, icon = '📄', color = null, body = '', focus = 0 }) => {
+  const id = newId()
+  insPage.run({ id, parent, title, icon, color, body, focus, ord: pageOrder++, ts })
+  return id
+}
+
+const degree = addPage({ title: 'Degree Planning', icon: '🎓', color: 'blue', focus: 1,
+  body: docOf(heading('Degree Planning'), para('Mapping out classes, requirements, and the long game.')) })
+addPage({ parent: degree, title: 'Fall 2026 courses', icon: '📚',
+  body: docOf(heading('Fall 2026 — shortlist'), bullets(['S&DS 365 — Intermediate ML', 'Econ elective', 'Language: Italian II']), para('Decide by course-selection deadline (Aug 21).')) })
+addPage({ parent: degree, title: 'Major requirements', icon: '✅',
+  body: docOf(heading('Requirements tracker'), checks([['Intro sequence', true], ['Methods requirement', false], ['Senior project', false]])) })
+
+const rotunda = addPage({ title: 'Rotunda', icon: '🚀', color: 'violet',
+  body: docOf(heading('Rotunda'), para('Founder brain-dump: product, fundraising, hiring.')) })
+addPage({ parent: rotunda, title: 'Investor Q&A prep', icon: '💬', focus: 1,
+  body: docOf(heading('Questions to nail'), bullets(['CAC / payback period', 'Why now', 'Moat vs incumbents', 'Team gaps and the hiring plan'])) })
+
+const jobs = addPage({ title: 'Job Applications', icon: '💼', color: 'emerald' })
+addPage({ parent: jobs, title: 'AI Training job — Radiology', icon: '🧠', focus: 1,
+  body: docOf(
+    heading('AI Training job — Radiology'),
+    para('Research-assistant role: literature review + ML on imaging data.'),
+    bullets(['Build the lit-review pipeline', 'Mass data + model training', 'Connect agent teams / MCP for the workflow']),
+  ) })
+
+const brainstorms = addPage({ title: 'Brainstorms', icon: '🧩', color: 'amber' })
+addPage({ parent: brainstorms, title: 'Weekly "what did I ship" digest', icon: '📈',
+  body: docOf(heading('Idea'), para('Auto-summarize what I worked on per project each Sunday — pull from task completions, rugby, and improvements.')) })
 
 console.log('✅ Seeded Life Manager with persona data.')
 process.exit(0)

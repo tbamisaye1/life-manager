@@ -14,6 +14,7 @@ import events from './routes/events.js'
 import priorities from './routes/priorities.js'
 import improvements from './routes/improvements.js'
 import notes from './routes/notes.js'
+import pages from './routes/pages.js'
 import emails from './routes/emails.js'
 import replyQueue from './routes/replyQueue.js'
 import rugby from './routes/rugby.js'
@@ -46,6 +47,7 @@ app.use('/api/events', events)
 app.use('/api/priorities', priorities)
 app.use('/api/improvements', improvements)
 app.use('/api/notes', notes)
+app.use('/api/pages', pages)
 app.use('/api/emails', emails)
 app.use('/api/reply-queue', replyQueue)
 app.use('/api/rugby', rugby)
