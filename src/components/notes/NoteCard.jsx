@@ -22,7 +22,7 @@ export function NoteCard({ note, onOpen, onTogglePin }) {
         </IconButton>
       </div>
       <p className="line-clamp-5 whitespace-pre-wrap text-sm text-zinc-500">{note.body || 'Empty'}</p>
-      <p className="mt-3 text-[11px] text-zinc-300">{formatDate(note.updated_at, 'MMM d')}</p>
+      <p className="mt-3 text-[11px] text-zinc-400">{formatDate(note.updated_at, 'MMM d')}</p>
     </Card>
   )
 }

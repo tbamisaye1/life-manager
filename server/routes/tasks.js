@@ -44,18 +44,36 @@ router.post('/', (req, res) => {
   res.status(201).json(db.prepare(`${withProject} WHERE t.id = ?`).get(id))
 })
 
+// Advance a due date by the recurrence cadence, preserving date-only vs. timed.
+function advanceDue(due, recurrence) {
+  const base = due ? new Date(due) : new Date()
+  if (recurrence === 'monthly') base.setMonth(base.getMonth() + 1)
+  else if (recurrence === 'weekly') base.setDate(base.getDate() + 7)
+  else base.setDate(base.getDate() + 1)
+  return due && due.length <= 10 ? base.toISOString().slice(0, 10) : base.toISOString()
+}
+
 router.patch('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
   if (!existing) return res.status(404).json(httpError('Task not found', 'NOT_FOUND'))
   const patch = { ...req.body }
-  // Completing a task stamps completed_at and logs work on its project.
-  if (patch.status === 'done' && existing.status !== 'done') {
+  const isCompleting = patch.status === 'done' && existing.status !== 'done'
+
+  // Completing anything logs work on its project.
+  if (isCompleting && existing.project_id) touchProject(existing.project_id)
+
+  if (isCompleting && existing.recurrence && existing.recurrence !== 'single') {
+    // Recurring: roll the due date forward and keep it active instead of
+    // marking it done forever, so it reappears next period.
+    patch.status = 'todo'
+    patch.due_date = advanceDue(existing.due_date, existing.recurrence)
+    db.prepare('UPDATE tasks SET completed_at = NULL WHERE id = ?').run(req.params.id)
+  } else if (isCompleting) {
     db.prepare('UPDATE tasks SET completed_at = ? WHERE id = ?').run(now(), req.params.id)
-    if (existing.project_id) touchProject(existing.project_id)
-  }
-  if (patch.status && patch.status !== 'done') {
+  } else if (patch.status && patch.status !== 'done') {
     db.prepare('UPDATE tasks SET completed_at = NULL WHERE id = ?').run(req.params.id)
   }
+
   const upd = buildUpdate('tasks', req.params.id, patch, ALLOWED)
   if (upd) db.prepare(upd.sql).run(upd.params)
   res.json(db.prepare(`${withProject} WHERE t.id = ?`).get(req.params.id))

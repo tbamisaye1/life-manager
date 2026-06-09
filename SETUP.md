@@ -14,7 +14,7 @@ npm install      # install dependencies (already done if you cloned with node_mo
 npm run dev      # starts BOTH the Vite frontend and the local API
 ```
 
-- Frontend: http://localhost:5173
+- Frontend: http://localhost:5180
 - API: http://localhost:4000 (the frontend proxies `/api` here)
 
 The database auto-creates and seeds realistic demo data on first boot, so the

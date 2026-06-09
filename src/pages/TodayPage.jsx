@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, Sun, Calendar, ListChecks } from 'lucide-react'
+import { AlertCircle, Sun, Calendar, ListChecks, CalendarClock } from 'lucide-react'
 import { Loading, ErrorState, EmptyState } from '../components/ui'
 import { SectionCard } from '../components/shared/SectionCard'
 import { TodayHero } from '../components/today/TodayHero'
@@ -19,7 +19,7 @@ export default function TodayPage() {
   if (isLoading) return <Loading label="Loading your day…" />
   if (isError) return <ErrorState message="Couldn't load Today" onRetry={refetch} />
 
-  const { events, dueToday, overdue, priorities, counts } = data
+  const { events, dueToday, overdue, dueThisWeek = [], priorities, counts } = data
 
   return (
     <div>
@@ -46,6 +46,14 @@ export default function TodayPage() {
               </div>
             )}
           </SectionCard>
+
+          {dueThisWeek.length > 0 && (
+            <SectionCard title="Coming up this week" icon={CalendarClock} count={dueThisWeek.length} to="/tasks">
+              <div className="divide-y divide-zinc-100">
+                {dueThisWeek.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />)}
+              </div>
+            </SectionCard>
+          )}
         </div>
 
         <div className="space-y-6">

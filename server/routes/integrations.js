@@ -4,7 +4,7 @@ import * as notionI from '../integrations/notion.js'
 import { asyncRoute, httpError } from '../lib/http.js'
 
 const router = Router()
-const FRONTEND = 'http://localhost:5173/settings'
+const FRONTEND = 'http://localhost:5180/settings'
 
 router.get('/status', (req, res) => {
   res.json({ google: googleI.status(), notion: notionI.status() })

@@ -1,12 +1,14 @@
 import { Router } from 'express'
 import { db } from '../db/index.js'
-import { newId, now, buildUpdate } from '../lib/helpers.js'
+import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 
 const router = Router()
 const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id']
+const BOOLS = ['all_day']
 
-// GET /api/events?from=ISO&to=ISO
+// GET /api/events?from=ISO&to=ISO  (date-only `to` is treated as end-of-day so
+// timed events on the final day aren't lexically excluded).
 router.get('/', (req, res) => {
   const { from, to } = req.query
   let sql = 'SELECT * FROM events'
@@ -14,16 +16,16 @@ router.get('/', (req, res) => {
   if (from && to) {
     sql += ' WHERE start >= @from AND start <= @to'
     params.from = from
-    params.to = to
+    params.to = to.length <= 10 ? `${to}T23:59:59.999Z` : to
   }
   sql += ' ORDER BY start ASC'
-  res.json(db.prepare(sql).all(params))
+  res.json(mapRows(db.prepare(sql).all(params), BOOLS))
 })
 
 router.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
   if (!row) return res.status(404).json(httpError('Event not found', 'NOT_FOUND'))
-  res.json(row)
+  res.json(decodeBooleans(row, BOOLS))
 })
 
 router.post('/', (req, res) => {
@@ -38,7 +40,7 @@ router.post('/', (req, res) => {
     notes: req.body.notes || '', color: req.body.color || 'slate',
     project_id: req.body.project_id || null, ts,
   })
-  res.status(201).json(db.prepare('SELECT * FROM events WHERE id = ?').get(id))
+  res.status(201).json(decodeBooleans(db.prepare('SELECT * FROM events WHERE id = ?').get(id), BOOLS))
 })
 
 router.patch('/:id', (req, res) => {
@@ -46,7 +48,7 @@ router.patch('/:id', (req, res) => {
   if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
   const upd = buildUpdate('events', req.params.id, patch, ALLOWED)
   if (upd) db.prepare(upd.sql).run(upd.params)
-  res.json(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id))
+  res.json(decodeBooleans(db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id), BOOLS))
 })
 
 router.delete('/:id', (req, res) => {

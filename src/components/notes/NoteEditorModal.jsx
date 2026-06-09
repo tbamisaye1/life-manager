@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { Modal, Button, Input, Textarea } from '../ui'
+import { Modal, Button, Input, Textarea, Label } from '../ui'
 import { notes as notesResource } from '../../hooks/resources'
 
 /**
@@ -39,8 +39,14 @@ export function NoteEditorModal({ note, open, onClose }) {
       }
     >
       <div className="space-y-3">
-        <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-        <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Jot it down…" className="min-h-[160px]" />
+        <div>
+          <Label>Title</Label>
+          <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
+        </div>
+        <div>
+          <Label>Note</Label>
+          <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Jot it down…" className="min-h-[160px]" />
+        </div>
       </div>
     </Modal>
   )

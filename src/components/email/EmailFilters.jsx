@@ -1,11 +1,11 @@
 import { cn } from '../../lib/cn'
-import { TASK_FILTERS } from './taskFilterConfig'
+import { EMAIL_FILTERS } from './emailFilterConfig'
 
-/** Segmented filter tabs for the tasks list. */
-export function TaskFilters({ value, onChange, counts = {} }) {
+/** Segmented filter tabs for the email list. */
+export function EmailFilters({ value, onChange, counts = {} }) {
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 pb-2">
-      {TASK_FILTERS.map((f) => {
+      {EMAIL_FILTERS.map((f) => {
         const active = value === f.key
         return (
           <button

@@ -7,6 +7,19 @@ export const newId = () => nanoid(12)
 export const now = () => new Date().toISOString()
 
 /**
+ * Local calendar date as YYYY-MM-DD. Uses local time components (NOT
+ * toISOString, which shifts to UTC and can land on the wrong day for users
+ * behind/ahead of UTC). Accepts a Date, an ISO string, or nothing (= today).
+ */
+export function localDateStr(input = new Date()) {
+  const d = input instanceof Date ? input : new Date(input)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
  * Coerce SQLite integer flags (0/1) to booleans on the way out, for a set of
  * known boolean columns. Keeps the API returning real JSON booleans.
  */

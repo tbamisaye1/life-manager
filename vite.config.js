@@ -6,7 +6,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    port: 5173,
+    // Dedicated port so Life Manager never collides with other local apps
+    // (e.g. another Vite project on 5173). strictPort makes this deterministic.
+    port: 5180,
+    strictPort: true,
     proxy: {
       // Local backend (Express + SQLite). Never points at any cloud host.
       '/api': {

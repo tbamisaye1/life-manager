@@ -50,8 +50,9 @@ export default function ImprovementDetailPage() {
             <span className="text-sm text-zinc-500">{im.progress}%</span>
           </div>
           <ProgressBar value={im.progress} className="h-2" />
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex items-center gap-2">
             <Button size="sm" onClick={() => setProgress(-10)} disabled={im.progress <= 0}>-10%</Button>
+            <span className="min-w-[3rem] text-center text-sm font-semibold text-zinc-700">{im.progress}%</span>
             <Button size="sm" onClick={() => setProgress(10)} disabled={im.progress >= 100}>+10%</Button>
           </div>
         </CardBody>

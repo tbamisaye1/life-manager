@@ -13,7 +13,7 @@ export function Topbar({ onQuickAdd }) {
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 bg-white/80 px-6 backdrop-blur">
       <div className="flex items-center gap-2 text-sm">
         {meta?.icon && <meta.icon className="h-4 w-4 text-zinc-400" />}
-        <span className="font-medium text-zinc-700">{title}</span>
+        <span className="text-base font-semibold text-zinc-900">{title}</span>
       </div>
       <Button variant="primary" size="sm" onClick={onQuickAdd}>
         <Plus className="h-4 w-4" /> New

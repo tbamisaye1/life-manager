@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { db } from '../db/index.js'
 import { newId, now, buildUpdate, decodeBooleans } from '../lib/helpers.js'
+import { isDoneForPeriod } from '../lib/period.js'
 
 const router = Router()
 const ALLOWED = ['title', 'cadence', 'emoji', 'sort_order', 'active']
@@ -13,16 +14,6 @@ function decorate(row) {
   const r = decodeBooleans(row, BOOLS)
   r.done_for_period = isDoneForPeriod(row)
   return r
-}
-function isDoneForPeriod(row) {
-  if (!row.last_done_at) return false
-  const last = new Date(row.last_done_at)
-  const nowD = new Date()
-  if (row.cadence === 'weekly') {
-    const diff = (nowD - last) / 864e5
-    return diff < 7
-  }
-  return last.toISOString().slice(0, 10) === nowD.toISOString().slice(0, 10)
 }
 
 router.get('/', (req, res) => {
