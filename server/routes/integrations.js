@@ -6,9 +6,9 @@ import { asyncRoute, httpError } from '../lib/http.js'
 const router = Router()
 const FRONTEND = 'http://localhost:5180/settings'
 
-router.get('/status', (req, res) => {
-  res.json({ google: googleI.status(), notion: notionI.status() })
-})
+router.get('/status', asyncRoute(async (req, res) => {
+  res.json({ google: await googleI.status(), notion: await notionI.status() })
+}))
 
 // --- Google ---
 router.get('/google/connect', (req, res) => {
@@ -28,10 +28,10 @@ router.post('/google/sync', asyncRoute(async (req, res) => {
   res.json(await googleI.syncAll())
 }))
 
-router.delete('/google', (req, res) => {
-  googleI.disconnect()
+router.delete('/google', asyncRoute(async (req, res) => {
+  await googleI.disconnect()
   res.json({ ok: true })
-})
+}))
 
 // --- Notion ---
 router.get('/notion/connect', (req, res) => {
@@ -52,9 +52,9 @@ router.post('/notion/sync', asyncRoute(async (req, res) => {
   res.json(await notionI.syncTasksFromDatabase(databaseId))
 }))
 
-router.delete('/notion', (req, res) => {
-  notionI.disconnect()
+router.delete('/notion', asyncRoute(async (req, res) => {
+  await notionI.disconnect()
   res.json({ ok: true })
-})
+}))
 
 export default router
