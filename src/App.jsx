@@ -1,25 +1,43 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { AppShell } from './components/layout/AppShell'
+import TodayPage from './pages/TodayPage'
+import CalendarPage from './pages/CalendarPage'
+import TasksPage from './pages/TasksPage'
+import PrioritiesPage from './pages/PrioritiesPage'
+import BoredPage from './pages/BoredPage'
+import ImprovementsPage from './pages/ImprovementsPage'
+import ImprovementDetailPage from './pages/ImprovementDetailPage'
+import ProjectsPage from './pages/ProjectsPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
+import RugbyPage from './pages/RugbyPage'
+import EmailPage from './pages/EmailPage'
+import RepliesPage from './pages/RepliesPage'
+import NotesPage from './pages/NotesPage'
+import SettingsPage from './pages/SettingsPage'
+import NotFoundPage from './pages/NotFoundPage'
+
 function App() {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold tracking-tight">Life Manager</h1>
-          <span className="text-sm text-slate-500">v0.1.0</span>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-6 py-16">
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-          <h2 className="text-3xl font-bold tracking-tight">
-            Welcome to your Life Manager
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-slate-500">
-            The foundation is set up with React, Vite, and Tailwind CSS. Start
-            building the features that help you manage your life.
-          </p>
-        </div>
-      </main>
-    </div>
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<Navigate to="/today" replace />} />
+        <Route path="/today" element={<TodayPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/priorities" element={<PrioritiesPage />} />
+        <Route path="/bored" element={<BoredPage />} />
+        <Route path="/improvements" element={<ImprovementsPage />} />
+        <Route path="/improvements/:id" element={<ImprovementDetailPage />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/projects/:id" element={<ProjectDetailPage />} />
+        <Route path="/rugby" element={<RugbyPage />} />
+        <Route path="/email" element={<EmailPage />} />
+        <Route path="/replies" element={<RepliesPage />} />
+        <Route path="/notes" element={<NotesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   )
 }
 

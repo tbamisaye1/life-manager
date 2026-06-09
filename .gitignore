@@ -1,6 +1,14 @@
 # Claude Code local settings
 .claude/settings.local.json
 
+# Secrets and local database (never commit)
+.env
+.env.local
+server/db/*.sqlite
+server/db/*.sqlite-shm
+server/db/*.sqlite-wal
+server/db/*.db
+
 # Logs
 logs
 *.log
