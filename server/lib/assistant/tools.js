@@ -63,13 +63,14 @@ export function buildTools(record) {
     async ({ date }) => {
       const day = date || localDateStr()
       const events = await db
-        .prepare('SELECT title, start, "end", all_day FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
+        .prepare('SELECT id, title, start, "end", all_day FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
         .all(day)
+      // Include ids so the model can delete/move specific events.
       return JSON.stringify({ date: day, events })
     },
     {
       name: 'get_schedule',
-      description: "Look at the user's events/blocks for a day (defaults to today). Check this before scheduling.",
+      description: "Look at the user's events/blocks for a day (defaults to today). Returns each event's id so you can delete or move it. Check this before scheduling, clearing, or rescheduling.",
       schema: z.object({ date: z.string().optional().describe('YYYY-MM-DD; omit for today') }),
     },
   )
@@ -97,16 +98,18 @@ export function buildTools(record) {
       const ts = now()
       const id = newId()
       const finish = end || (all_day ? start : addMinutes(start, duration_minutes || 60))
+      // flagship=0: assistant blocks live on the daily schedule, not the month
+      // Calendar overview (which is reserved for flagship events).
       await db
-        .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,source,created_at,updated_at)
-          VALUES (@id,@title,@start,@end,@all_day,'','','blue','assistant',@ts,@ts)`)
+        .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,created_at,updated_at)
+          VALUES (@id,@title,@start,@end,@all_day,'','','blue',0,'assistant',@ts,@ts)`)
         .run({ id, title, start, end: finish, all_day: all_day ? 1 : 0, ts })
       record(`📅 Scheduled “${title}”`)
       return JSON.stringify({ ok: true, id, title, start, end: finish })
     },
     {
       name: 'schedule_event',
-      description: 'Put a timed block on the daily schedule / calendar.',
+      description: 'Put a timed block on the daily schedule.',
       schema: z.object({
         title: z.string(),
         start: z.string().describe('local datetime, e.g. 2026-06-09T13:00:00'),
@@ -187,5 +190,51 @@ export function buildTools(record) {
     },
   )
 
-  return [getSchedule, findFreeSlot, scheduleEvent, createTask, setTaskPriority, addToBoredList]
+  const deleteEvent = tool(
+    async ({ event_id }) => {
+      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
+      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id.' })
+      await db.prepare('DELETE FROM events WHERE id = ?').run(event_id)
+      record(`🗑️ Removed “${ev.title}”`)
+      return JSON.stringify({ ok: true, id: event_id })
+    },
+    {
+      name: 'delete_event',
+      description: 'Delete a single event by its id (get ids from get_schedule first). Do NOT re-create events to "clear" them.',
+      schema: z.object({ event_id: z.string() }),
+    },
+  )
+
+  const clearDay = tool(
+    async ({ date, include_all_day }) => {
+      const day = date || localDateStr()
+      const filter = include_all_day ? '' : ' AND all_day = 0'
+      const rows = await db.prepare(`SELECT id FROM events WHERE substr(start,1,10) = ?${filter}`).all(day)
+      for (const r of rows) await db.prepare('DELETE FROM events WHERE id = ?').run(r.id)
+      record(`🗑️ Cleared ${rows.length} event${rows.length === 1 ? '' : 's'} on ${day}`)
+      return JSON.stringify({ ok: true, date: day, deleted: rows.length })
+    },
+    {
+      name: 'clear_day',
+      description: "Remove ALL of a day's events at once (timed only by default; set include_all_day to also remove all-day events). Use this for 'clear my schedule' requests.",
+      schema: z.object({ date: z.string().optional(), include_all_day: z.boolean().optional() }),
+    },
+  )
+
+  const rescheduleEvent = tool(
+    async ({ event_id, start, end }) => {
+      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
+      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id.' })
+      await db.prepare('UPDATE events SET start = ?, "end" = ?, updated_at = ? WHERE id = ?').run(start, end || start, now(), event_id)
+      record(`🕑 Moved “${ev.title}”`)
+      return JSON.stringify({ ok: true, id: event_id, start, end: end || start })
+    },
+    {
+      name: 'reschedule_event',
+      description: 'Move an existing event to a new start/end (ids from get_schedule). Use this to move things — never delete + recreate.',
+      schema: z.object({ event_id: z.string(), start: z.string(), end: z.string().optional() }),
+    },
+  )
+
+  return [getSchedule, findFreeSlot, scheduleEvent, deleteEvent, clearDay, rescheduleEvent, createTask, setTaskPriority, addToBoredList]
 }

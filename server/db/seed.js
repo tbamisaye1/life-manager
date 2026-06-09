@@ -82,19 +82,19 @@ export async function seed({ force = false } = {}) {
     { t: 'Henry — coffee', d: -1, time: '10:00', color: 'emerald' },
     { t: '[Carys] college call', d: 2, time: '16:00', color: 'rose' },
     { t: 'HMP Highdown visit', d: 2, color: 'slate' },
-    { t: 'Rugby training', d: 1, time: '19:00', color: 'orange', pr: 'Rugby' },
-    { t: 'Rotunda standup', d: 0, time: '09:30', color: 'violet', pr: 'Rotunda' },
+    { t: 'Rugby training', d: 1, time: '19:00', color: 'orange', pr: 'Rugby', flag: 0 },
+    { t: 'Rotunda standup', d: 0, time: '09:30', color: 'violet', pr: 'Rotunda', flag: 0 },
     { t: '[Hermela] catch up', d: 9, color: 'teal' },
     { t: 'Yvonne — mentor call', d: 17, time: '14:00', color: 'blue' },
     { t: 'Club match vs Saints', d: 6, time: '14:00', color: 'orange', pr: 'Rugby' },
   ]
-  const insEvent = db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,project_id,source,created_at,updated_at)
-  VALUES (@id,@title,@start,@end,@all_day,'','',@color,@project_id,'local',@ts,@ts)`)
+  const insEvent = db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,project_id,source,created_at,updated_at)
+  VALUES (@id,@title,@start,@end,@all_day,'','',@color,@flagship,@project_id,'local',@ts,@ts)`)
   for (const e of events) {
     const allDay = e.time ? 0 : 1
     const start = e.time ? D(e.d, e.time) : dateOnly(e.d)
     const end = e.time ? D(e.d, addHour(e.time)) : dateOnly(e.d)
-    await insEvent.run({ id: newId(), title: e.t, start, end, all_day: allDay, color: e.color, project_id: projId[e.pr] ?? null, ts })
+    await insEvent.run({ id: newId(), title: e.t, start, end, all_day: allDay, color: e.color, flagship: e.flag === 0 ? 0 : 1, project_id: projId[e.pr] ?? null, ts })
   }
 
   // ---------------- Daily / recurring priorities ----------------

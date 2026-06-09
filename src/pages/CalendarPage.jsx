@@ -27,7 +27,9 @@ export default function CalendarPage() {
   const from = format(startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 }), 'yyyy-MM-dd')
   const to = format(endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 0 }), 'yyyy-MM-dd')
 
-  const { data: eventsData = [], isLoading, isError, refetch } = eventsResource.useList({ from, to })
+  // Only "flagship" events appear on the month overview — the Daily Schedule
+  // shows everything, the calendar shows just the things worth surfacing.
+  const { data: eventsData = [], isLoading, isError, refetch } = eventsResource.useList({ from, to, flagship: 1 })
 
   const openCreate = (date) => setModal({ event: null, prefillDate: date })
   const openEdit = (event) => setModal({ event, prefillDate: null })

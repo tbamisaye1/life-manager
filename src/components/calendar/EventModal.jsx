@@ -29,7 +29,7 @@ const DEFAULT_COLOR = 'blue'
  *                  omitting it preserves prior behavior)
  *   open, onClose
  */
-export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open, onClose }) {
+export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open, onClose, defaultFlagship = true }) {
   const isEditing = !!event
 
   // prefillStart (ISO with time) takes priority over prefillDate for timed events
@@ -45,6 +45,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         notes: event.notes || '',
         color: event.color || DEFAULT_COLOR,
         project_id: event.project_id || '',
+        flagship: event.flagship !== false && event.flagship !== 0,
       }
     : {
         title: '',
@@ -58,6 +59,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         notes: '',
         color: DEFAULT_COLOR,
         project_id: '',
+        flagship: defaultFlagship,
       }
 
   const [draft, setDraft] = useState(initialDraft)
@@ -86,6 +88,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
       notes: draft.notes || null,
       color: draft.color || DEFAULT_COLOR,
       project_id: draft.project_id || null,
+      flagship: draft.flagship ? 1 : 0,
     }
     if (isEditing) {
       await update.mutateAsync({ id: event.id, ...payload })
@@ -145,6 +148,16 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
             label="All-day event"
           />
           <span className="text-sm text-zinc-600">All-day</span>
+        </div>
+
+        {/* Flagship toggle — whether this appears on the month Calendar overview */}
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={draft.flagship}
+            onChange={(checked) => set({ flagship: checked })}
+            label="Show on month calendar"
+          />
+          <span className="text-sm text-zinc-600">Show on month calendar</span>
         </div>
 
         {/* Start / End */}

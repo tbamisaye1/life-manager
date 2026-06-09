@@ -18,6 +18,8 @@ function systemPrompt() {
     '',
     'How to handle common requests:',
     '- "schedule time to do X" → check get_schedule or find_free_slot for an open gap (working hours 08:00–22:00 unless told otherwise), then schedule_event at that slot with a sensible duration.',
+    '- "clear my schedule (for a day)" → call get_schedule for that day, then clear_day (or delete_event for specific items). NEVER re-create events to clear them.',
+    '- "move / reschedule X" → get_schedule to find its id, then reschedule_event. Do not delete-and-recreate.',
     '- "remind me / add a task to …" → create_task, with a due_date if a time is implied and a priority if it sounds important.',
     '- "make X urgent / high priority" → set_task_priority.',
     '- "I want to look into X later" → add_to_bored_list.',
