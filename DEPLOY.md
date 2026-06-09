@@ -8,6 +8,7 @@ free **Neon** Postgres database.
 > shares anything with Rotunda's AWS — it's a completely separate space.
 
 ## How the database works
+
 - **Local dev:** no setup. If `DATABASE_URL` is empty, the app runs an embedded
   Postgres (PGlite) stored in `server/db/` — same SQL dialect as production.
 - **Production:** set `DATABASE_URL` to your Neon connection string. The schema
@@ -15,14 +16,17 @@ free **Neon** Postgres database.
   empty.
 
 ## 1. Create the Neon database (free)
+
 1. Sign up at https://neon.tech and create a new project (any region near you).
 2. In **Connection Details**, copy the connection string. It looks like:
    `postgresql://USER:PASSWORD@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require`
 3. (Optional) Test locally: put it in `.env` as `DATABASE_URL=...`, run
    `npm run dev`, and confirm the app loads against Neon. Remove it from `.env`
    afterwards to go back to local PGlite, or keep it.
+   2.5. postgresql://neondb_owner:npg_XZb1hoO4spGj@ep-calm-cell-apku4wy4.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require
 
 ## 2. Deploy to Vercel (free)
+
 1. Push this repo to GitHub (already done: `tbamisaye1/life-manager`).
 2. At https://vercel.com → **Add New → Project** → import the repo.
 3. Framework preset: **Vite** (auto-detected). The included `vercel.json` already
@@ -36,11 +40,13 @@ free **Neon** Postgres database.
    first API request the schema is created and demo data seeds once.
 
 ## 3. After deploy
+
 - Visit your Vercel URL — the app should load and work.
 - To wipe/reseed the hosted DB later: run locally with `DATABASE_URL` set to Neon
   and `npm run seed -- --force` (this resets the remote data — use with care).
 
 ## Notes
+
 - Serverless functions are stateless; all persistence is in Neon. Cold starts
   create a fresh DB connection and ensure the schema exists (idempotent).
 - The local `server/db/life-manager.pglite/` folder is gitignored and never used
