@@ -9,6 +9,7 @@ import { buildRugbyTools } from './tools-rugby.js'
 import { buildProjectTools } from './tools-projects.js'
 import { buildListTools } from './tools-lists.js'
 import { buildInboxTools } from './tools-inbox.js'
+import { buildPinsTools } from './tools-pins.js'
 
 /**
  * Build the agent's full toolset. Each tool that changes something calls
@@ -51,52 +52,105 @@ export function buildTools(record) {
   )
 
   const scheduleEvent = tool(
-    async ({ title, start, end, duration_minutes, all_day }) => {
+    async ({ title, start, end, duration_minutes, all_day, location, notes, color, flagship, project }) => {
       const ts = now()
       const id = newId()
       const finish = end || (all_day ? start : addMinutes(start, duration_minutes || 60))
-      // flagship=0: assistant blocks live on the daily schedule, not the month
-      // Calendar overview (which is reserved for flagship events).
+      const projectId = await resolveProjectId(project)
+      // flagship defaults to 0: assistant blocks live on the daily schedule, not
+      // the month Calendar overview — unless the user asks for a flagship event.
       await db
-        .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,created_at,updated_at)
-          VALUES (@id,@title,@start,@end,@all_day,'','','blue',0,'assistant',@ts,@ts)`)
-        .run({ id, title, start, end: finish, all_day: all_day ? 1 : 0, ts })
+        .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,project_id,source,created_at,updated_at)
+          VALUES (@id,@title,@start,@end,@all_day,@location,@notes,@color,@flagship,@pid,'assistant',@ts,@ts)`)
+        .run({
+          id, title, start, end: finish, all_day: all_day ? 1 : 0,
+          location: location || '', notes: notes || '', color: color || 'blue',
+          flagship: flagship ? 1 : 0, pid: projectId, ts,
+        })
       record(`📅 Scheduled “${title}”`)
       return JSON.stringify({ ok: true, id, title, start, end: finish })
     },
     {
       name: 'schedule_event',
-      description: 'Put a timed block on the daily schedule.',
+      description: 'Create an event. Default is a normal daily-schedule block; set flagship=true for a big overview/month-calendar event. Can include location, notes, colour, and a project.',
       schema: z.object({
         title: z.string(),
         start: z.string().describe('local datetime, e.g. 2026-06-09T13:00:00'),
         end: z.string().optional(),
         duration_minutes: z.number().int().optional(),
         all_day: z.boolean().optional(),
+        location: z.string().optional(),
+        notes: z.string().optional(),
+        color: z.enum(['blue', 'violet', 'emerald', 'amber', 'rose', 'orange', 'teal', 'slate', 'red']).optional(),
+        flagship: z.boolean().optional().describe('true = big overview/month-calendar event'),
+        project: z.string().optional().describe('project name/short_code to attach'),
+      }),
+    },
+  )
+
+  const updateEvent = tool(
+    async ({ event_id, title, start, end, all_day, location, notes, color, flagship }) => {
+      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
+      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id (use get_schedule first).' })
+      const sets = []
+      const p = { id: event_id, ts: now() }
+      if (title !== undefined) { sets.push('title = @title'); p.title = title }
+      if (start !== undefined) { sets.push('start = @start'); p.start = start }
+      if (end !== undefined) { sets.push('"end" = @end'); p.end = end }
+      if (all_day !== undefined) { sets.push('all_day = @all_day'); p.all_day = all_day ? 1 : 0 }
+      if (location !== undefined) { sets.push('location = @location'); p.location = location }
+      if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
+      if (color !== undefined) { sets.push('color = @color'); p.color = color }
+      if (flagship !== undefined) { sets.push('flagship = @flagship'); p.flagship = flagship ? 1 : 0 }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE events SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated “${title || ev.title}”`)
+      return JSON.stringify({ ok: true, id: event_id })
+    },
+    {
+      name: 'update_event',
+      description: "Edit an existing event's details (ids from get_schedule): rename, change time, location, notes, colour, all-day, or flagship status. To only move the time, reschedule_event is simpler.",
+      schema: z.object({
+        event_id: z.string(),
+        title: z.string().optional(),
+        start: z.string().optional(),
+        end: z.string().optional(),
+        all_day: z.boolean().optional(),
+        location: z.string().optional(),
+        notes: z.string().optional(),
+        color: z.enum(['blue', 'violet', 'emerald', 'amber', 'rose', 'orange', 'teal', 'slate', 'red']).optional(),
+        flagship: z.boolean().optional(),
       }),
     },
   )
 
   const createTask = tool(
-    async ({ title, due_date, priority, project }) => {
+    async ({ title, due_date, priority, project, notes, recurrence, emoji }) => {
       const ts = now()
       const id = newId()
       const projectId = await resolveProjectId(project)
       await db
         .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,source,created_at,updated_at)
-          VALUES (@id,@title,'todo','📌',@due,@priority,'single',@pid,'','assistant',@ts,@ts)`)
-        .run({ id, title, due: due_date || null, priority: priority || 'normal', pid: projectId, ts })
+          VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,'assistant',@ts,@ts)`)
+        .run({
+          id, title, emoji: emoji || '📌', due: due_date || null,
+          priority: priority || 'normal', recurrence: recurrence || 'single',
+          pid: projectId, notes: notes || '', ts,
+        })
       record(`✅ Added task “${title}”${priority && priority !== 'normal' ? ` (${priority})` : ''}`)
       return JSON.stringify({ ok: true, id, title, priority: priority || 'normal' })
     },
     {
       name: 'create_task',
-      description: 'Create a task or reminder. Set a due_date when a time is implied, and priority if it sounds urgent.',
+      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, and recurrence if it repeats.',
       schema: z.object({
         title: z.string(),
         due_date: z.string().optional().describe('local datetime; optional'),
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         project: z.string().optional().describe('project name to attach to, if mentioned'),
+        notes: z.string().optional().describe('description / extra detail'),
+        recurrence: z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+        emoji: z.string().optional(),
       }),
     },
   )
@@ -135,7 +189,7 @@ export function buildTools(record) {
   }
 
   const updateTask = tool(
-    async ({ title, new_title, due_date, priority, status }) => {
+    async ({ title, new_title, due_date, priority, status, notes, recurrence, project }) => {
       const task = await findTask(title, false)
       if (!task) return JSON.stringify({ ok: false, message: `No task matching "${title}".` })
       const sets = []
@@ -144,6 +198,9 @@ export function buildTools(record) {
       if (due_date !== undefined) { sets.push('due_date = @due'); p.due = due_date || null }
       if (priority) { sets.push('priority = @priority'); p.priority = priority }
       if (status) { sets.push('status = @status'); p.status = status; if (status === 'done') sets.push('completed_at = @ts') }
+      if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
+      if (recurrence) { sets.push('recurrence = @recurrence'); p.recurrence = recurrence }
+      if (project !== undefined) { sets.push('project_id = @pid'); p.pid = await resolveProjectId(project) }
       if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
       await db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
       record(`✏️ Updated “${task.title}”`)
@@ -151,13 +208,16 @@ export function buildTools(record) {
     },
     {
       name: 'update_task',
-      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, or status.',
+      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, status, notes/description, recurrence, or project.',
       schema: z.object({
         title: z.string().describe('part of the task title to find it'),
         new_title: z.string().optional(),
         due_date: z.string().optional(),
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         status: z.enum(['todo', 'doing', 'done']).optional(),
+        notes: z.string().optional().describe('description / extra detail'),
+        recurrence: z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+        project: z.string().optional().describe('project name/short_code to attach (empty string to clear)'),
       }),
     },
   )
@@ -241,7 +301,7 @@ export function buildTools(record) {
 
   return [
     // Schedule / calendar
-    getSchedule, findFreeSlot, scheduleEvent, deleteEvent, clearDay, rescheduleEvent,
+    getSchedule, findFreeSlot, scheduleEvent, updateEvent, deleteEvent, clearDay, rescheduleEvent,
     // Tasks
     createTask, updateTask, completeTask, deleteTask, setTaskPriority, listTasks,
     // Everything else, by domain
@@ -251,5 +311,6 @@ export function buildTools(record) {
     ...buildProjectTools({ record }),
     ...buildListTools({ record }),
     ...buildInboxTools({ record }),
+    ...buildPinsTools({ record }),
   ]
 }

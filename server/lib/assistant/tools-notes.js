@@ -87,6 +87,32 @@ export function buildNotesTools({ record }) {
     },
   )
 
+  const updateNote = tool(
+    async ({ title, new_title, content }) => {
+      const page = await db
+        .prepare('SELECT id, title FROM pages WHERE title ILIKE ? AND archived = 0 ORDER BY created_at DESC LIMIT 1')
+        .get(`%${title}%`)
+      if (!page) return JSON.stringify({ ok: false, message: `No note matching "${title}".` })
+      const sets = []
+      const p = { id: page.id, ts: now() }
+      if (new_title !== undefined) { sets.push('title = @title'); p.title = new_title }
+      if (content !== undefined) { sets.push('body = @body'); p.body = textToTiptap(content) }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update (pass new_title and/or content).' })
+      await db.prepare(`UPDATE pages SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated note "${new_title || page.title}"`)
+      return JSON.stringify({ ok: true, id: page.id, title: new_title || page.title })
+    },
+    {
+      name: 'update_note',
+      description: 'Rename a note and/or REPLACE its entire content (found by title fragment). To add without replacing, use append_to_note instead.',
+      schema: z.object({
+        title: z.string().describe('fragment of the note title to find it'),
+        new_title: z.string().optional(),
+        content: z.string().optional().describe('new full content; supports "# heading" and "- bullet" lines'),
+      }),
+    },
+  )
+
   const deleteNote = tool(
     async ({ title }) => {
       const page = await db
@@ -106,5 +132,5 @@ export function buildNotesTools({ record }) {
     },
   )
 
-  return [listNotes, createNote, appendToNote, deleteNote]
+  return [listNotes, createNote, appendToNote, updateNote, deleteNote]
 }

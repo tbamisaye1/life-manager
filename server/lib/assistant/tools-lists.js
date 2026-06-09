@@ -67,7 +67,36 @@ export function buildListTools({ record }) {
     },
   )
 
+  const deletePriority = tool(
+    async ({ title }) => {
+      const row = await db
+        .prepare('SELECT id, title FROM priorities WHERE title ILIKE ? AND active = 1 LIMIT 1')
+        .get(`%${title}%`)
+      if (!row) return JSON.stringify({ ok: false, message: `No active priority matching "${title}".` })
+      await db.prepare('UPDATE priorities SET active = 0, updated_at = @ts WHERE id = @id').run({ ts: now(), id: row.id })
+      record(`🗑️ Removed priority "${row.title}"`)
+      return JSON.stringify({ ok: true, id: row.id, title: row.title })
+    },
+    {
+      name: 'delete_priority',
+      description: 'Remove a priority from the active list (found by title fragment).',
+      schema: z.object({ title: z.string().describe('priority title fragment') }),
+    },
+  )
+
   // ── Improvements ────────────────────────────────────────────────────────────
+
+  const listImprovements = tool(
+    async () => {
+      const rows = await db.prepare('SELECT id, title, category, progress FROM improvements ORDER BY created_at DESC LIMIT 50').all()
+      return JSON.stringify({ improvements: rows })
+    },
+    {
+      name: 'list_improvements',
+      description: 'List improvement goals (id, title, category, progress) so you can target one.',
+      schema: z.object({}),
+    },
+  )
 
   const createImprovement = tool(
     async ({ title, summary, why, category }) => {
@@ -152,6 +181,28 @@ export function buildListTools({ record }) {
     },
   )
 
+  const completeImprovementAction = tool(
+    async ({ improvement_title, action_text }) => {
+      const imp = await db.prepare('SELECT id, title FROM improvements WHERE title ILIKE ? LIMIT 1').get(`%${improvement_title}%`)
+      if (!imp) return JSON.stringify({ ok: false, message: `No improvement matching "${improvement_title}".` })
+      const action = await db
+        .prepare('SELECT id, text FROM improvement_actions WHERE improvement_id = ? AND text ILIKE ? AND done = 0 LIMIT 1')
+        .get(imp.id, `%${action_text}%`)
+      if (!action) return JSON.stringify({ ok: false, message: `No open action matching "${action_text}" on "${imp.title}".` })
+      await db.prepare('UPDATE improvement_actions SET done = 1 WHERE id = ?').run(action.id)
+      record(`✔️ Completed action on "${imp.title}"`)
+      return JSON.stringify({ ok: true, id: action.id })
+    },
+    {
+      name: 'complete_improvement_action',
+      description: 'Mark an action step on an improvement goal as done (both matched by text fragment).',
+      schema: z.object({
+        improvement_title: z.string().describe('improvement title fragment'),
+        action_text: z.string().describe('action step text fragment'),
+      }),
+    },
+  )
+
   // ── Bored list ───────────────────────────────────────────────────────────────
 
   const addToBoredList = tool(
@@ -215,15 +266,34 @@ export function buildListTools({ record }) {
     },
   )
 
+  const deleteBoredItem = tool(
+    async ({ title }) => {
+      const row = await db.prepare('SELECT id, title FROM bored_items WHERE title ILIKE ? LIMIT 1').get(`%${title}%`)
+      if (!row) return JSON.stringify({ ok: false, message: `No bored item matching "${title}".` })
+      await db.prepare('DELETE FROM bored_items WHERE id = ?').run(row.id)
+      record(`🗑️ Removed "${row.title}" from your Bored list`)
+      return JSON.stringify({ ok: true, id: row.id, title: row.title })
+    },
+    {
+      name: 'delete_bored_item',
+      description: 'Delete an item from the Bored list, found by title fragment.',
+      schema: z.object({ title: z.string().describe('bored item title fragment') }),
+    },
+  )
+
   return [
     listPriorities,
     createPriority,
     checkPriority,
+    deletePriority,
+    listImprovements,
     createImprovement,
     addImprovementAction,
     setImprovementProgress,
+    completeImprovementAction,
     addToBoredList,
     listBored,
     completeBoredItem,
+    deleteBoredItem,
   ]
 }

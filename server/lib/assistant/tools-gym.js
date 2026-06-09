@@ -84,7 +84,7 @@ export function buildGymTools({ record }) {
   // log_set  (the key tool)
   // -------------------------------------------------------------------------
   const logSet = tool(
-    async ({ exercise_name, weight, reps, date }) => {
+    async ({ exercise_name, weight, reps, date, notes }) => {
       const day = date || localDateStr()
 
       // 1. Resolve exercise by name ILIKE
@@ -139,8 +139,8 @@ export function buildGymTools({ record }) {
       const setTs = now()
       await db
         .prepare(
-          `INSERT INTO gym_sets (id, workout_id, exercise_id, set_number, weight, reps, rpe, done, created_at)
-           VALUES (@id, @workout_id, @exercise_id, @set_number, @weight, @reps, NULL, 1, @ts)`,
+          `INSERT INTO gym_sets (id, workout_id, exercise_id, set_number, weight, reps, rpe, done, notes, created_at)
+           VALUES (@id, @workout_id, @exercise_id, @set_number, @weight, @reps, NULL, 1, @notes, @ts)`,
         )
         .run({
           id: setId,
@@ -149,6 +149,7 @@ export function buildGymTools({ record }) {
           set_number: setNumber,
           weight: weight ?? null,
           reps: reps ?? null,
+          notes: notes || '',
           ts: setTs,
         })
 
@@ -179,6 +180,7 @@ export function buildGymTools({ record }) {
         weight: z.number().optional().describe('Weight used (unit matches exercise)'),
         reps: z.number().int().optional(),
         date: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+        notes: z.string().optional().describe('a note for this set, e.g. "felt heavy", "left knee twinge"'),
       }),
     },
   )
@@ -488,6 +490,107 @@ export function buildGymTools({ record }) {
   )
 
   // -------------------------------------------------------------------------
+  // update_exercise — edit the standard (rep range, sets, unit, notes, …)
+  // -------------------------------------------------------------------------
+  const updateExercise = tool(
+    async ({ exercise_name, new_name, category, unit, muscle_group, rep_low, rep_high, default_sets, increment, notes }) => {
+      const exercise = await db
+        .prepare('SELECT id, name FROM gym_exercises WHERE name ILIKE ? AND archived = 0 LIMIT 1')
+        .get(`%${exercise_name}%`)
+      if (!exercise) return JSON.stringify({ ok: false, message: `No exercise matching "${exercise_name}".` })
+      const sets = []
+      const p = { id: exercise.id, ts: now() }
+      if (new_name !== undefined) { sets.push('name = @name'); p.name = new_name }
+      if (category !== undefined) { sets.push('category = @category'); p.category = category }
+      if (unit !== undefined) { sets.push('unit = @unit'); p.unit = unit }
+      if (muscle_group !== undefined) { sets.push('muscle_group = @muscle_group'); p.muscle_group = muscle_group }
+      if (rep_low !== undefined) { sets.push('rep_low = @rep_low'); p.rep_low = rep_low }
+      if (rep_high !== undefined) { sets.push('rep_high = @rep_high'); p.rep_high = rep_high }
+      if (default_sets !== undefined) { sets.push('default_sets = @default_sets'); p.default_sets = default_sets }
+      if (increment !== undefined) { sets.push('increment = @increment'); p.increment = increment }
+      if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE gym_exercises SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated exercise "${new_name || exercise.name}"`)
+      return JSON.stringify({ ok: true, id: exercise.id })
+    },
+    {
+      name: 'update_exercise',
+      description: "Edit an exercise's standard (resolved by name): rename, rep range, default sets, weight increment, unit, muscle group, category, or notes/cues.",
+      schema: z.object({
+        exercise_name: z.string().describe('current name fragment'),
+        new_name: z.string().optional(),
+        category: z.enum(['strength', 'rehab', 'mobility', 'conditioning']).optional(),
+        unit: z.enum(['kg', 'lb', 'bodyweight', 'band', 'time']).optional(),
+        muscle_group: z.string().optional(),
+        rep_low: z.number().int().optional(),
+        rep_high: z.number().int().optional(),
+        default_sets: z.number().int().optional(),
+        increment: z.number().optional(),
+        notes: z.string().optional(),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // update_routine — rename, reschedule, recolour
+  // -------------------------------------------------------------------------
+  const updateRoutine = tool(
+    async ({ routine_name, new_name, weekday, emoji, color, notes }) => {
+      const routine = await db
+        .prepare('SELECT id, name FROM gym_routines WHERE name ILIKE ? LIMIT 1')
+        .get(`%${routine_name}%`)
+      if (!routine) return JSON.stringify({ ok: false, message: `No routine matching "${routine_name}".` })
+      const sets = []
+      const p = { id: routine.id, ts: now() }
+      if (new_name !== undefined) { sets.push('name = @name'); p.name = new_name }
+      if (weekday !== undefined) { sets.push('weekday = @weekday'); p.weekday = weekday }
+      if (emoji !== undefined) { sets.push('emoji = @emoji'); p.emoji = emoji }
+      if (color !== undefined) { sets.push('color = @color'); p.color = color }
+      if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE gym_routines SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated routine "${new_name || routine.name}"`)
+      return JSON.stringify({ ok: true, id: routine.id })
+    },
+    {
+      name: 'update_routine',
+      description: 'Edit a routine (resolved by name): rename, change its scheduled weekday (0=Sun…6=Sat, null=unscheduled), emoji, colour, or notes.',
+      schema: z.object({
+        routine_name: z.string().describe('current name fragment'),
+        new_name: z.string().optional(),
+        weekday: z.number().int().min(0).max(6).nullable().optional(),
+        emoji: z.string().optional(),
+        color: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // remove_exercise_from_routine
+  // -------------------------------------------------------------------------
+  const removeExerciseFromRoutine = tool(
+    async ({ routine_name, exercise_name }) => {
+      const routine = await db.prepare('SELECT id, name FROM gym_routines WHERE name ILIKE ? LIMIT 1').get(`%${routine_name}%`)
+      if (!routine) return JSON.stringify({ ok: false, message: `No routine matching "${routine_name}".` })
+      const link = await db
+        .prepare(`SELECT re.id, e.name FROM gym_routine_exercises re JOIN gym_exercises e ON e.id = re.exercise_id
+          WHERE re.routine_id = ? AND e.name ILIKE ? LIMIT 1`)
+        .get(routine.id, `%${exercise_name}%`)
+      if (!link) return JSON.stringify({ ok: false, message: `"${exercise_name}" is not in routine "${routine.name}".` })
+      await db.prepare('DELETE FROM gym_routine_exercises WHERE id = ?').run(link.id)
+      record(`➖ Removed "${link.name}" from "${routine.name}"`)
+      return JSON.stringify({ ok: true, routine: routine.name, exercise: link.name })
+    },
+    {
+      name: 'remove_exercise_from_routine',
+      description: 'Remove an exercise from a routine (both resolved by name). Does not delete the exercise itself.',
+      schema: z.object({ routine_name: z.string(), exercise_name: z.string() }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
   // delete_routine — by name.
   // -------------------------------------------------------------------------
   const deleteRoutine = tool(
@@ -521,5 +624,8 @@ export function buildGymTools({ record }) {
     deleteWorkout,
     deleteExercise,
     deleteRoutine,
+    updateExercise,
+    updateRoutine,
+    removeExerciseFromRoutine,
   ]
 }
