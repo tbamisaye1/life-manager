@@ -18,6 +18,7 @@ import pages from './routes/pages.js'
 import emails from './routes/emails.js'
 import replyQueue from './routes/replyQueue.js'
 import rugby from './routes/rugby.js'
+import gym from './routes/gym.js'
 import favorites from './routes/favorites.js'
 import integrations from './routes/integrations.js'
 import dashboard from './routes/dashboard.js'
@@ -51,6 +52,7 @@ app.use('/api/pages', pages)
 app.use('/api/emails', emails)
 app.use('/api/reply-queue', replyQueue)
 app.use('/api/rugby', rugby)
+app.use('/api/gym', gym)
 app.use('/api/favorites', favorites)
 app.use('/api/integrations', integrations)
 app.use('/api', dashboard)
