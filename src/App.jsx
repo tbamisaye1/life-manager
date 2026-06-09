@@ -34,6 +34,7 @@ function App() {
         <Route path="/email" element={<EmailPage />} />
         <Route path="/replies" element={<RepliesPage />} />
         <Route path="/notes" element={<NotesPage />} />
+        <Route path="/notes/:id" element={<NotesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

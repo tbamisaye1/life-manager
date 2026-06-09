@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ListChecks, Plus } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Loading, ErrorState, EmptyState } from '../components/ui'
 import { PriorityItem } from '../components/priorities/PriorityItem'
+import { PriorityDetailModal } from '../components/priorities/PriorityDetailModal'
 import { priorities as prioritiesResource, useCheckPriority } from '../hooks/resources'
 
 export default function PrioritiesPage() {
@@ -9,6 +10,7 @@ export default function PrioritiesPage() {
   const check = useCheckPriority()
   const create = prioritiesResource.useCreate()
   const [adding, setAdding] = useState('')
+  const [selected, setSelected] = useState(null)
 
   if (isLoading) return <Loading label="Loading priorities…" />
   if (isError) return <ErrorState message="Couldn't load priorities" onRetry={refetch} />
@@ -45,16 +47,18 @@ export default function PrioritiesPage() {
         <div className="space-y-5">
           {daily.length > 0 && (
             <Group title="Every day">
-              {daily.map((p) => <PriorityItem key={p.id} priority={p} onCheck={check.mutate} />)}
+              {daily.map((p) => <PriorityItem key={p.id} priority={p} onCheck={check.mutate} onOpen={setSelected} />)}
             </Group>
           )}
           {weekly.length > 0 && (
             <Group title="Every week">
-              {weekly.map((p) => <PriorityItem key={p.id} priority={p} onCheck={check.mutate} />)}
+              {weekly.map((p) => <PriorityItem key={p.id} priority={p} onCheck={check.mutate} onOpen={setSelected} />)}
             </Group>
           )}
         </div>
       )}
+
+      <PriorityDetailModal key={selected?.id} priority={selected} open={!!selected} onClose={() => setSelected(null)} />
     </div>
   )
 }
