@@ -53,7 +53,7 @@ export function PriorityDetailModal({ priority, open, onClose }) {
         </div>
         <div>
           <Label>Notes &amp; detail</Label>
-          <div className="rounded-lg border border-zinc-200 px-3 py-2">
+          <div className="rounded-lg border border-zinc-200 px-3 pb-2">
             <RichEditor value={priority.body} onChange={(v) => { body.current = v }} placeholder="Why it matters, sub-steps, what 'done' looks like…" />
           </div>
         </div>

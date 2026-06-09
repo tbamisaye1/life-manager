@@ -5,7 +5,7 @@ import { PageTreeItem } from './PageTreeItem'
 /** The OneNote-style page sidebar: all top-level pages + their subpages. */
 export function PageTree({ tree, onAddSub, onAddTop }) {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col pt-1">
       <div className="flex items-center justify-between px-1 pb-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Pages</span>
       </div>

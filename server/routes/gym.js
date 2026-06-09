@@ -155,13 +155,16 @@ router.get('/workouts/:id', (req, res) => {
   const extras = loggedExerciseIds.filter((id) => !ids.has(id))
     .map((id) => db.prepare('SELECT * FROM gym_exercises WHERE id = ?').get(id)).filter(Boolean)
 
-  const exercises = [...planned, ...extras].map((ex) => ({
-    exercise: { ...ex, target_sets: undefined },
-    target_sets: ex.target_sets ?? ex.default_sets,
-    suggestion: suggestForExercise(ex, workout.id),
-    sets: db.prepare('SELECT * FROM gym_sets WHERE workout_id = ? AND exercise_id = ? ORDER BY set_number')
-      .all(req.params.id, ex.id).map((s) => decodeBooleans(s, ['done'])),
-  }))
+  const exercises = [...planned, ...extras].map((ex) => {
+    const targetSets = ex.target_sets ?? ex.default_sets
+    return {
+      exercise: { ...ex, target_sets: undefined },
+      target_sets: targetSets,
+      suggestion: suggestForExercise(ex, workout.id, targetSets),
+      sets: db.prepare('SELECT * FROM gym_sets WHERE workout_id = ? AND exercise_id = ? ORDER BY set_number')
+        .all(req.params.id, ex.id).map((s) => decodeBooleans(s, ['done'])),
+    }
+  })
 
   res.json({ ...decodeBooleans(workout, ['completed']), exercises })
 })

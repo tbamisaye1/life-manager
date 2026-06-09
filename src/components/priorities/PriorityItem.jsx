@@ -3,8 +3,11 @@ import { Checkbox } from '../ui/Checkbox'
 import { Badge } from '../ui/Badge'
 import { cn } from '../../lib/cn'
 
-// A page body is non-empty if it has more than an empty doc.
-const hasDetail = (body) => typeof body === 'string' && body.length > 25
+// True only when the body has real content (not just an empty TipTap doc,
+// which still serializes to ~45 chars).
+const hasDetail = (body) =>
+  typeof body === 'string' &&
+  (/"type":"text"/.test(body) || /"type":"(heading|bulletList|orderedList|taskList|blockquote|codeBlock)"/.test(body))
 
 /** A recurring-priority checklist row. Reused on Today and the Priorities page. */
 export function PriorityItem({ priority, onCheck, onOpen }) {

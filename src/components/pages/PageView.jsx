@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Star, Trash2, Plus, ChevronRight, Check } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -24,13 +24,17 @@ export function PageView({ page }) {
   const timer = useRef(null)
   const latest = useRef({ title: page.title, body: page.body, dirty: false })
 
-  // Debounced autosave. The pending timer is intentionally NOT cleared on
-  // unmount, so a last edit made just before switching pages still saves.
+  // Debounced autosave, with a guaranteed flush on unmount so a last edit made
+  // just before switching pages is never lost.
   const doSave = () => {
     if (!latest.current.dirty) return
     update.mutate({ id: page.id, title: latest.current.title, body: latest.current.body })
     latest.current.dirty = false
   }
+  const flushRef = useRef(doSave)
+  useEffect(() => { flushRef.current = doSave })
+  useEffect(() => () => { clearTimeout(timer.current); flushRef.current() }, [])
+
   const schedule = () => {
     clearTimeout(timer.current)
     timer.current = setTimeout(doSave, 700)
@@ -58,17 +62,17 @@ export function PageView({ page }) {
     <div className="flex h-full flex-col">
       {/* Breadcrumb + actions */}
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1 text-xs text-zinc-400">
+        <div className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
           {page.breadcrumb?.map((b) => (
             <span key={b.id} className="flex items-center gap-1">
-              <Link to={`/notes/${b.id}`} className="truncate hover:text-zinc-600 focus-ring rounded">{b.icon} {b.title}</Link>
+              <Link to={`/notes/${b.id}`} className="truncate hover:text-zinc-700 focus-ring rounded">{b.icon} {b.title}</Link>
               <ChevronRight className="h-3 w-3" />
             </span>
           ))}
-          <span className="truncate text-zinc-500">{page.icon} {title || 'Untitled'}</span>
+          <span className="truncate text-zinc-700">{page.icon} {title || 'Untitled'}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <span className="mr-1 text-xs text-zinc-300">{update.isPending ? 'Saving…' : <span className="inline-flex items-center gap-0.5 text-emerald-500"><Check className="h-3 w-3" />Saved</span>}</span>
+          <span className="mr-1 text-xs text-zinc-400">{update.isPending ? 'Saving…' : <span className="inline-flex items-center gap-0.5 text-emerald-600"><Check className="h-3 w-3" />Saved</span>}</span>
           <IconButton label={focus ? 'Unflag focus' : 'Flag as focus (shows in Bored)'} active={focus} onClick={toggleFocus}>
             <Star className={cn('h-4 w-4', focus && 'fill-current text-amber-500')} />
           </IconButton>
@@ -78,7 +82,7 @@ export function PageView({ page }) {
       </div>
 
       {/* Title */}
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex min-w-0 items-center gap-2">
         <span className="text-3xl">{page.icon || '📄'}</span>
         <input
           value={title}
