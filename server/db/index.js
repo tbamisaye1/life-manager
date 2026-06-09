@@ -94,6 +94,8 @@ export async function initDb() {
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8')
   await client.exec(schema)
   await client.exec("ALTER TABLE priorities ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''")
+  // Existing events default to flagship=1 so they stay on the month Calendar.
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship INTEGER NOT NULL DEFAULT 1')
   return client.label
 }
 

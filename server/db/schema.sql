@@ -44,8 +44,9 @@ CREATE TABLE IF NOT EXISTS events (
   location      TEXT,
   notes         TEXT,
   color         TEXT NOT NULL DEFAULT 'slate',
+  flagship      INTEGER NOT NULL DEFAULT 1,       -- 1 = show on the month Calendar overview
   project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  source        TEXT NOT NULL DEFAULT 'local',   -- local | google | notion
+  source        TEXT NOT NULL DEFAULT 'local',   -- local | google | notion | assistant
   external_id   TEXT,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
@@ -283,6 +284,23 @@ CREATE TABLE IF NOT EXISTS bored_items (
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
+
+-- Assistant chat history (ChatGPT-style conversations).
+CREATE TABLE IF NOT EXISTS chat_conversations (
+  id            TEXT PRIMARY KEY,
+  title         TEXT NOT NULL DEFAULT 'New chat',
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id              TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL,                 -- user | assistant
+  content         TEXT NOT NULL DEFAULT '',
+  actions         TEXT,                          -- JSON array of action strings
+  created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON chat_messages(conversation_id);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);

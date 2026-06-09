@@ -188,6 +188,7 @@ export default function DailySchedulePage() {
           prefillDate={modal.prefillDate}
           prefillStart={modal.prefillStart}
           prefillEnd={modal.prefillEnd}
+          defaultFlagship={false}
           open
           onClose={closeModal}
         />
