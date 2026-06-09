@@ -1,0 +1,66 @@
+import { ChatOpenAI } from '@langchain/openai'
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
+import { createReactAgent } from '@langchain/langgraph/prebuilt'
+import { buildTools } from './tools.js'
+import { localDateStr } from '../helpers.js'
+
+export const assistantConfigured = () => Boolean(process.env.OPENAI_API_KEY)
+
+function systemPrompt() {
+  const now = new Date()
+  return [
+    'You are the built-in assistant for "Life Manager", a personal productivity app.',
+    'You can read the user\'s schedule and actually make changes by calling tools — call them, don\'t just describe what you would do.',
+    '',
+    `Right now it is ${now.toString()} (local time). Today is ${localDateStr()}.`,
+    '',
+    'The app has a Daily Schedule of timed event blocks (same data as the month Calendar), Tasks with a priority of low/normal/high/urgent (urgent and high tasks are pinned in the header), an "I\'m Bored" list of things to revisit, plus Notes, Projects, Gym and Rugby.',
+    '',
+    'How to handle common requests:',
+    '- "schedule time to do X" → check get_schedule or find_free_slot for an open gap (working hours 08:00–22:00 unless told otherwise), then schedule_event at that slot with a sensible duration.',
+    '- "remind me / add a task to …" → create_task, with a due_date if a time is implied and a priority if it sounds important.',
+    '- "make X urgent / high priority" → set_task_priority.',
+    '- "I want to look into X later" → add_to_bored_list.',
+    '',
+    'Use local datetimes like 2026-06-09T15:00:00 (no timezone suffix). Keep replies short and friendly, and confirm what you did in a sentence or two. Reply in plain text — no markdown.',
+  ].join('\n')
+}
+
+function toLangChainMessages(history) {
+  return history.map((m) => (m.role === 'assistant' ? new AIMessage(m.content) : new HumanMessage(m.content)))
+}
+
+/**
+ * Run one assistant turn over the conversation so far.
+ * Returns the reply text plus the list of actions it performed.
+ */
+export async function runAssistant(history) {
+  if (!assistantConfigured()) {
+    return { configured: false, actions: [], reply: 'Add an OPENAI_API_KEY to your .env to enable the assistant.' }
+  }
+
+  const actions = []
+  const tools = buildTools((line) => actions.push(line))
+  const model = new ChatOpenAI({
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: 0,
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+
+  const agent = createReactAgent({ llm: model, tools })
+  const messages = [new SystemMessage(systemPrompt()), ...toLangChainMessages(history)]
+  const result = await agent.invoke({ messages })
+
+  return { configured: true, actions, reply: extractReply(result.messages) }
+}
+
+// The final answer is the last AI message; its content may be a string or an
+// array of content blocks depending on the model — normalise to plain text.
+function extractReply(messages) {
+  const content = messages.at(-1)?.content
+  if (typeof content === 'string') return content || 'Done.'
+  if (Array.isArray(content)) {
+    return content.map((part) => (typeof part === 'string' ? part : part?.text || '')).join('') || 'Done.'
+  }
+  return 'Done.'
+}
