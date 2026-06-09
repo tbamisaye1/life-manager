@@ -132,10 +132,15 @@ router.get('/today', (req, res) => {
 
 // ---------------- Workouts + set logging ----------------
 router.get('/workouts', (req, res) => {
-  const { date } = req.query
-  const rows = date
-    ? db.prepare('SELECT * FROM gym_workouts WHERE date = ? ORDER BY created_at DESC').all(date)
-    : db.prepare('SELECT * FROM gym_workouts ORDER BY date DESC, created_at DESC LIMIT 30').all()
+  const { date, from, to } = req.query
+  let rows
+  if (date) {
+    rows = db.prepare('SELECT * FROM gym_workouts WHERE date = ? ORDER BY created_at DESC').all(date)
+  } else if (from && to) {
+    rows = db.prepare('SELECT * FROM gym_workouts WHERE date >= ? AND date <= ? ORDER BY date, created_at').all(from, to)
+  } else {
+    rows = db.prepare('SELECT * FROM gym_workouts ORDER BY date DESC, created_at DESC LIMIT 30').all()
+  }
   res.json(mapRows(rows, ['completed']))
 })
 

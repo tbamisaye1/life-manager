@@ -22,6 +22,8 @@ import gym from './routes/gym.js'
 import favorites from './routes/favorites.js'
 import integrations from './routes/integrations.js'
 import dashboard from './routes/dashboard.js'
+import boredItems from './routes/boredItems.js'
+import search from './routes/search.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -55,6 +57,8 @@ app.use('/api/rugby', rugby)
 app.use('/api/gym', gym)
 app.use('/api/favorites', favorites)
 app.use('/api/integrations', integrations)
+app.use('/api/bored-items', boredItems)
+app.use('/api/search', search)
 app.use('/api', dashboard)
 
 app.use(errorMiddleware)

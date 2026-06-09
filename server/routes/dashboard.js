@@ -48,58 +48,11 @@ router.get('/today', (req, res) => {
   })
 })
 
-// GET /api/bored — suggest one useful, goal-related thing to do right now.
-// Each source is randomized so refreshing ("Something else") gives real variety.
+// GET /api/bored — pages you flagged as "focus" to revisit. The curated list
+// itself lives in /api/bored-items; this just surfaces flagged notes pages.
 router.get('/bored', (req, res) => {
-  const suggestions = []
-
-  // 0) A page you flagged as "focus" — something you want to come back to.
-  const focusPage = db.prepare('SELECT * FROM pages WHERE is_focus = 1 AND archived = 0 ORDER BY RANDOM() LIMIT 1').get()
-  if (focusPage) suggestions.push({
-    kind: 'page', emoji: focusPage.icon || '📌',
-    title: focusPage.title, context: 'A page you flagged to come back to', link: `/notes/${focusPage.id}`,
-  })
-
-  // 1) An unfinished action from an improvement goal.
-  const action = db.prepare(`SELECT a.text, a.id action_id, i.title goal, i.emoji, i.id improvement_id
-    FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id
-    WHERE a.done = 0 ORDER BY RANDOM() LIMIT 1`).get()
-  if (action) suggestions.push({
-    kind: 'improvement', emoji: action.emoji || '🎯',
-    title: action.text, context: `Toward your goal: ${action.goal}`,
-    link: `/improvements/${action.improvement_id}`,
-  })
-
-  // 2) A daily/weekly priority not done for its period (random among the undone).
-  const priorities = db.prepare('SELECT * FROM priorities WHERE active = 1').all().filter((p) => !isDoneForPeriod(p))
-  const priority = priorities[Math.floor(Math.random() * priorities.length)]
-  if (priority) suggestions.push({
-    kind: 'priority', emoji: priority.emoji || '✅',
-    title: priority.title, context: `A ${priority.cadence} priority you haven't ticked off`, link: '/priorities',
-  })
-
-  // 3) A project not touched in 3+ days (random among the stale ones).
-  const stale = db.prepare(`SELECT * FROM projects WHERE archived = 0
-    AND (last_worked_at IS NULL OR last_worked_at < @cutoff) ORDER BY RANDOM() LIMIT 1`)
-    .get({ cutoff: new Date(Date.now() - 3 * 864e5).toISOString() })
-  if (stale) {
-    const days = stale.last_worked_at ? Math.floor((Date.now() - new Date(stale.last_worked_at).getTime()) / 864e5) : null
-    suggestions.push({
-      kind: 'project', emoji: stale.emoji || '📁',
-      title: `Check in on ${stale.name}`,
-      context: days != null ? `You last worked on it ${days} day${days === 1 ? '' : 's'} ago` : "You haven't logged work here yet",
-      link: `/projects/${stale.id}`,
-    })
-  }
-
-  // 4) A random email still needing a reply.
-  const email = db.prepare('SELECT * FROM emails WHERE needs_reply = 1 ORDER BY RANDOM() LIMIT 1').get()
-  if (email) suggestions.push({
-    kind: 'email', emoji: '✉️',
-    title: `Reply to ${email.from_name}`, context: email.reply_note || email.subject, link: '/email',
-  })
-
-  res.json({ suggestions, count: suggestions.length })
+  const focusPages = db.prepare('SELECT id, title, icon FROM pages WHERE is_focus = 1 AND archived = 0 ORDER BY updated_at DESC').all()
+  res.json({ focusPages })
 })
 
 export default router

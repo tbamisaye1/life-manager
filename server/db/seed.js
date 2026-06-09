@@ -23,7 +23,7 @@ const tables = [
   'improvement_actions', 'improvements', 'tasks', 'events', 'priorities',
   'gym_sets', 'gym_routine_exercises', 'gym_workouts', 'gym_routines', 'gym_exercises',
   'notes', 'emails', 'reply_queue', 'rugby_sessions', 'rugby_skills',
-  'favorites', 'recents', 'projects', 'pages',
+  'favorites', 'recents', 'projects', 'pages', 'bored_items',
 ]
 
 const seeded = db.prepare('SELECT COUNT(*) c FROM projects').get().c > 0
@@ -293,6 +293,17 @@ addPage({ parent: jobs, title: 'AI Training job — Radiology', icon: '🧠', fo
 const brainstorms = addPage({ title: 'Brainstorms', icon: '🧩', color: 'amber' })
 addPage({ parent: brainstorms, title: 'Weekly "what did I ship" digest', icon: '📈',
   body: docOf(heading('Idea'), para('Auto-summarize what I worked on per project each Sunday — pull from task completions, rugby, and improvements.')) })
+
+// ---------------- "I'm Bored" curated list ----------------
+const insBored = db.prepare(`INSERT INTO bored_items (id,title,emoji,category,body,done,sort_order,created_at,updated_at)
+  VALUES (@id,@title,@emoji,@category,@body,0,@ord,@ts,@ts)`)
+const boredItems = [
+  { title: 'Learn chess openings', emoji: '♟️', category: 'learn', body: docOf(para('Work through the London System + a Sicilian response. 20 min on Lichess studies.')) },
+  { title: 'Read a paper on diffusion models', emoji: '🔬', category: 'learn' },
+  { title: 'Sketch the weekly "what did I ship" tool', emoji: '🚀', category: 'project', body: docOf(para('Rough out the data model + a Sunday digest email.')) },
+  { title: 'Watch a rugby breakdown video', emoji: '🏉', category: 'improve' },
+]
+boredItems.forEach((b, i) => insBored.run({ id: newId(), title: b.title, emoji: b.emoji, category: b.category, body: b.body || '', ord: i, ts }))
 
 console.log('✅ Seeded Life Manager with persona data.')
 process.exit(0)

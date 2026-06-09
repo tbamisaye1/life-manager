@@ -1,7 +1,8 @@
-import { MapPin, Star } from 'lucide-react'
-import { Card, CardBody, Badge } from '../ui'
+import { MapPin, Star, Trash2 } from 'lucide-react'
+import { Card, CardBody, Badge, IconButton } from '../ui'
 import { formatDate } from '../../lib/format'
 import { StatPill } from './StatPill'
+import { useDeleteSession } from '../../hooks/useRugby'
 
 const METRIC_LABELS = {
   tackles: 'Tackles',
@@ -14,7 +15,8 @@ const METRIC_LABELS = {
 
 /** Session card showing date, type badge, game details, rating, metric pills, and notes. */
 export function SessionCard({ session }) {
-  const { date, type, opponent, position, rating, metrics = {}, notes } = session
+  const { id, date, type, opponent, position, rating, metrics = {}, notes } = session
+  const remove = useDeleteSession()
 
   const isGame = type === 'game'
   const metricEntries = Object.entries(metrics).filter(
@@ -22,7 +24,7 @@ export function SessionCard({ session }) {
   )
 
   return (
-    <Card>
+    <Card className="group">
       <CardBody className="p-4">
         {/* Header row */}
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -35,12 +37,17 @@ export function SessionCard({ session }) {
               <span className="truncate text-sm font-semibold text-zinc-800">vs {opponent}</span>
             )}
           </div>
-          {rating != null && (
-            <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-zinc-700">
-              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-              {rating}/10
-            </div>
-          )}
+          <div className="flex shrink-0 items-center gap-1">
+            {rating != null && (
+              <div className="flex items-center gap-1 text-sm font-semibold text-zinc-700">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                {rating}/10
+              </div>
+            )}
+            <IconButton label="Delete session" onClick={() => window.confirm('Delete this session?') && remove.mutate(id)} className="opacity-0 group-hover:opacity-100">
+              <Trash2 className="h-3.5 w-3.5" />
+            </IconButton>
+          </div>
         </div>
 
         {/* Position */}
