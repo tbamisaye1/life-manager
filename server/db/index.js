@@ -96,6 +96,8 @@ export async function initDb() {
   await client.exec("ALTER TABLE priorities ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''")
   // Existing events default to flagship=1 so they stay on the month Calendar.
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship INTEGER NOT NULL DEFAULT 1')
+  // Per-set notes for the gym logger.
+  await client.exec("ALTER TABLE gym_sets ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''")
   return client.label
 }
 

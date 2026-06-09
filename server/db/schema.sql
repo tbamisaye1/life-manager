@@ -265,6 +265,7 @@ CREATE TABLE IF NOT EXISTS gym_sets (
   reps          INTEGER,
   rpe           REAL,
   done          INTEGER NOT NULL DEFAULT 1,
+  notes         TEXT NOT NULL DEFAULT '',          -- per-set note ("felt heavy", "left knee twinge")
   created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_gym_sets_workout ON gym_sets(workout_id);
@@ -284,6 +285,18 @@ CREATE TABLE IF NOT EXISTS bored_items (
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
+
+-- Pinboard: quick-capture sticky notes for fleeting thoughts/ideas/reminders.
+-- Deliberately frictionless — type and go, delete when done. Mobile-first.
+CREATE TABLE IF NOT EXISTS pins (
+  id            TEXT PRIMARY KEY,
+  body          TEXT NOT NULL,
+  color         TEXT NOT NULL DEFAULT 'amber',     -- sticky-note tint
+  pinned        INTEGER NOT NULL DEFAULT 0,         -- keep important ones at top
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pins_created ON pins(created_at);
 
 -- Assistant chat history (ChatGPT-style conversations).
 CREATE TABLE IF NOT EXISTS chat_conversations (

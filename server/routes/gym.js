@@ -209,10 +209,12 @@ router.post('/workouts/:id/sets', async (req, res) => {
   const nextNum = (await db.prepare('SELECT COALESCE(MAX(set_number),0)+1 n FROM gym_sets WHERE workout_id = ? AND exercise_id = ?')
     .get(req.params.id, exercise_id)).n
   const id = newId()
-  await db.prepare(`INSERT INTO gym_sets (id,workout_id,exercise_id,set_number,weight,reps,rpe,done,created_at)
-    VALUES (@id,@wid,@ex,@num,@weight,@reps,@rpe,1,@ts)`).run({
+  await db.prepare(`INSERT INTO gym_sets (id,workout_id,exercise_id,set_number,weight,reps,rpe,done,notes,created_at)
+    VALUES (@id,@wid,@ex,@num,@weight,@reps,@rpe,@done,@notes,@ts)`).run({
     id, wid: req.params.id, ex: exercise_id, num: req.body.set_number ?? nextNum,
-    weight: req.body.weight ?? null, reps: req.body.reps ?? null, rpe: req.body.rpe ?? null, ts: now(),
+    weight: req.body.weight ?? null, reps: req.body.reps ?? null, rpe: req.body.rpe ?? null,
+    done: req.body.done === false || req.body.done === 0 ? 0 : 1,
+    notes: req.body.notes || '', ts: now(),
   })
   res.status(201).json(decodeBooleans(await db.prepare('SELECT * FROM gym_sets WHERE id = ?').get(id), ['done']))
 })
@@ -221,7 +223,7 @@ router.patch('/sets/:setId', async (req, res) => {
   const patch = { ...req.body }
   if ('done' in patch) patch.done = patch.done ? 1 : 0
   // gym_sets has no updated_at column, so write the allowed fields directly.
-  const fields = ['weight', 'reps', 'rpe', 'done', 'set_number'].filter((f) => f in patch)
+  const fields = ['weight', 'reps', 'rpe', 'done', 'set_number', 'notes'].filter((f) => f in patch)
   if (fields.length) {
     const sql = `UPDATE gym_sets SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`
     await db.prepare(sql).run({ ...patch, id: req.params.setId })
