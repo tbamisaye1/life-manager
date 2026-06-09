@@ -53,6 +53,13 @@ router.get('/today', (req, res) => {
 router.get('/bored', (req, res) => {
   const suggestions = []
 
+  // 0) A page you flagged as "focus" — something you want to come back to.
+  const focusPage = db.prepare('SELECT * FROM pages WHERE is_focus = 1 AND archived = 0 ORDER BY RANDOM() LIMIT 1').get()
+  if (focusPage) suggestions.push({
+    kind: 'page', emoji: focusPage.icon || '📌',
+    title: focusPage.title, context: 'A page you flagged to come back to', link: `/notes/${focusPage.id}`,
+  })
+
   // 1) An unfinished action from an improvement goal.
   const action = db.prepare(`SELECT a.text, a.id action_id, i.title goal, i.emoji, i.id improvement_id
     FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id
@@ -65,7 +72,7 @@ router.get('/bored', (req, res) => {
 
   // 2) A daily/weekly priority not done for its period (random among the undone).
   const priorities = db.prepare('SELECT * FROM priorities WHERE active = 1').all().filter((p) => !isDoneForPeriod(p))
-  const priority = priorities[Math.floor(seededFraction() * priorities.length)]
+  const priority = priorities[Math.floor(Math.random() * priorities.length)]
   if (priority) suggestions.push({
     kind: 'priority', emoji: priority.emoji || '✅',
     title: priority.title, context: `A ${priority.cadence} priority you haven't ticked off`, link: '/priorities',
@@ -94,10 +101,5 @@ router.get('/bored', (req, res) => {
 
   res.json({ suggestions, count: suggestions.length })
 })
-
-// Cheap per-request randomness without Math.random (kept deterministic-friendly).
-function seededFraction() {
-  return (Date.now() % 1000) / 1000
-}
 
 export default router

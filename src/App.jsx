@@ -10,6 +10,8 @@ import ImprovementDetailPage from './pages/ImprovementDetailPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import RugbyPage from './pages/RugbyPage'
+import GymPage from './pages/GymPage'
+import GymWorkoutPage from './pages/GymWorkoutPage'
 import EmailPage from './pages/EmailPage'
 import RepliesPage from './pages/RepliesPage'
 import NotesPage from './pages/NotesPage'
@@ -31,9 +33,12 @@ function App() {
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/rugby" element={<RugbyPage />} />
+        <Route path="/gym" element={<GymPage />} />
+        <Route path="/gym/workout/:id" element={<GymWorkoutPage />} />
         <Route path="/email" element={<EmailPage />} />
         <Route path="/replies" element={<RepliesPage />} />
         <Route path="/notes" element={<NotesPage />} />
+        <Route path="/notes/:id" element={<NotesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

@@ -14,9 +14,11 @@ import events from './routes/events.js'
 import priorities from './routes/priorities.js'
 import improvements from './routes/improvements.js'
 import notes from './routes/notes.js'
+import pages from './routes/pages.js'
 import emails from './routes/emails.js'
 import replyQueue from './routes/replyQueue.js'
 import rugby from './routes/rugby.js'
+import gym from './routes/gym.js'
 import favorites from './routes/favorites.js'
 import integrations from './routes/integrations.js'
 import dashboard from './routes/dashboard.js'
@@ -46,9 +48,11 @@ app.use('/api/events', events)
 app.use('/api/priorities', priorities)
 app.use('/api/improvements', improvements)
 app.use('/api/notes', notes)
+app.use('/api/pages', pages)
 app.use('/api/emails', emails)
 app.use('/api/reply-queue', replyQueue)
 app.use('/api/rugby', rugby)
+app.use('/api/gym', gym)
 app.use('/api/favorites', favorites)
 app.use('/api/integrations', integrations)
 app.use('/api', dashboard)

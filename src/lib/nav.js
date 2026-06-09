@@ -1,6 +1,6 @@
 import {
   Sun, CheckSquare, Calendar, ListChecks, Sparkles, TrendingUp,
-  FolderKanban, Mail, StickyNote, MessageSquare, Dumbbell, Settings,
+  FolderKanban, Mail, StickyNote, MessageSquare, Dumbbell, Trophy, Settings,
 } from 'lucide-react'
 
 // Single source of truth for primary navigation. Sidebar renders from this,
@@ -21,7 +21,8 @@ export const NAV_SECTIONS = [
       { path: '/bored', label: "I'm Bored", icon: Sparkles },
       { path: '/improvements', label: 'Improvements', icon: TrendingUp },
       { path: '/projects', label: 'Projects & Jobs', icon: FolderKanban },
-      { path: '/rugby', label: 'Rugby', icon: Dumbbell },
+      { path: '/gym', label: 'Gym & Rehab', icon: Dumbbell },
+      { path: '/rugby', label: 'Rugby', icon: Trophy },
     ],
   },
   {

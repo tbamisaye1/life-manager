@@ -4,7 +4,7 @@ import { newId, now, buildUpdate, decodeBooleans } from '../lib/helpers.js'
 import { isDoneForPeriod } from '../lib/period.js'
 
 const router = Router()
-const ALLOWED = ['title', 'cadence', 'emoji', 'sort_order', 'active']
+const ALLOWED = ['title', 'cadence', 'emoji', 'sort_order', 'active', 'body']
 const BOOLS = ['active']
 
 // Each priority reports whether it's "done for its current period" (today for

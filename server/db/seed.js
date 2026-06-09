@@ -21,8 +21,9 @@ const ts = now()
 
 const tables = [
   'improvement_actions', 'improvements', 'tasks', 'events', 'priorities',
+  'gym_sets', 'gym_routine_exercises', 'gym_workouts', 'gym_routines', 'gym_exercises',
   'notes', 'emails', 'reply_queue', 'rugby_sessions', 'rugby_skills',
-  'favorites', 'recents', 'projects',
+  'favorites', 'recents', 'projects', 'pages',
 ]
 
 const seeded = db.prepare('SELECT COUNT(*) c FROM projects').get().c > 0
@@ -210,6 +211,88 @@ const favorites = [
 ]
 const insFav = db.prepare(`INSERT INTO favorites (id,label,icon,path,sort_order,created_at) VALUES (@id,@label,@icon,@path,@ord,@ts)`)
 for (const f of favorites) insFav.run({ id: newId(), label: f.label, icon: f.icon, path: f.path, ord: f.ord, ts })
+
+// ---------------- Gym / Rehab ----------------
+const insEx = db.prepare(`INSERT INTO gym_exercises (id,name,category,muscle_group,unit,rep_low,rep_high,default_sets,increment,notes,archived,created_at,updated_at)
+  VALUES (@id,@name,@cat,@mg,@unit,@lo,@hi,@sets,@inc,@notes,0,@ts,@ts)`)
+const exId = {}
+const gymExercises = [
+  { key: 'bench', name: 'Bench Press', cat: 'strength', mg: 'Chest', unit: 'kg', lo: 5, hi: 8, sets: 3, inc: 2.5 },
+  { key: 'squat', name: 'Goblet Squat', cat: 'strength', mg: 'Legs', unit: 'kg', lo: 8, hi: 12, sets: 3, inc: 2.5 },
+  { key: 'rdl', name: 'Romanian Deadlift', cat: 'strength', mg: 'Hamstrings', unit: 'kg', lo: 6, hi: 10, sets: 3, inc: 5 },
+  { key: 'pullup', name: 'Pull-up', cat: 'strength', mg: 'Back', unit: 'bodyweight', lo: 5, hi: 10, sets: 3, inc: 0 },
+  { key: 'banded', name: 'Banded Shoulder ER', cat: 'rehab', mg: 'Shoulder', unit: 'band', lo: 12, hi: 15, sets: 3, inc: 0, notes: 'Slow tempo, no pain. Rehab for the AC joint.' },
+  { key: 'balance', name: 'Single-leg Balance', cat: 'rehab', mg: 'Ankle', unit: 'time', lo: 30, hi: 45, sets: 3, inc: 0, notes: 'Seconds per leg. Hamstring/ankle rehab.' },
+]
+for (const e of gymExercises) {
+  const id = newId(); exId[e.key] = id
+  insEx.run({ id, name: e.name, cat: e.cat, mg: e.mg, unit: e.unit, lo: e.lo, hi: e.hi, sets: e.sets, inc: e.inc, notes: e.notes || '', ts })
+}
+
+const insRoutine = db.prepare(`INSERT INTO gym_routines (id,name,emoji,color,weekday,notes,sort_order,created_at,updated_at)
+  VALUES (@id,@name,@emoji,@color,@weekday,'',@ord,@ts,@ts)`)
+const insRex = db.prepare('INSERT INTO gym_routine_exercises (id,routine_id,exercise_id,target_sets,sort_order) VALUES (?,?,?,?,?)')
+const routines = [
+  { name: 'Push', emoji: '💪', color: 'violet', weekday: 1, items: ['bench', 'pullup'] },
+  { name: 'Rehab + Legs', emoji: '🦵', color: 'emerald', weekday: 3, items: ['banded', 'balance', 'squat'] },
+  { name: 'Pull', emoji: '🏋️', color: 'blue', weekday: 5, items: ['pullup', 'rdl'] },
+]
+routines.forEach((r, ri) => {
+  const rid = newId()
+  insRoutine.run({ id: rid, name: r.name, emoji: r.emoji, color: r.color, weekday: r.weekday, ord: ri, ts })
+  r.items.forEach((k, i) => insRex.run(newId(), rid, exId[k], 3, i))
+})
+
+// A past workout (~1 week ago) so progression suggestions have history.
+const insWorkout = db.prepare(`INSERT INTO gym_workouts (id,date,routine_id,title,notes,completed,created_at,updated_at)
+  VALUES (@id,@date,null,@title,'',1,@ts,@ts)`)
+const insSet = db.prepare(`INSERT INTO gym_sets (id,workout_id,exercise_id,set_number,weight,reps,rpe,done,created_at)
+  VALUES (@id,@wid,@ex,@num,@weight,@reps,null,1,@ts)`)
+const pastWorkout = newId()
+insWorkout.run({ id: pastWorkout, date: dateOnly(-7), title: 'Push', ts })
+const log = (ex, weight, repsArr) => repsArr.forEach((reps, i) => insSet.run({ id: newId(), wid: pastWorkout, ex: exId[ex], num: i + 1, weight, reps, ts }))
+log('bench', 60, [8, 8, 8])   // hit top of 5-8 range -> suggestion will say go up
+log('pullup', null, [9, 8, 7])
+
+// ---------------- Pages (OneNote/Notion-style workspace) ----------------
+const para = (text) => ({ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] })
+const heading = (text, level = 2) => ({ type: 'heading', attrs: { level }, content: [{ type: 'text', text }] })
+const bullets = (items) => ({ type: 'bulletList', content: items.map((t) => ({ type: 'listItem', content: [para(t)] })) })
+const checks = (items) => ({ type: 'taskList', content: items.map(([t, done]) => ({ type: 'taskItem', attrs: { checked: !!done }, content: [para(t)] })) })
+const docOf = (...nodes) => JSON.stringify({ type: 'doc', content: nodes })
+
+let pageOrder = 0
+const insPage = db.prepare(`INSERT INTO pages (id,parent_id,title,icon,color,body,is_focus,sort_order,archived,created_at,updated_at)
+  VALUES (@id,@parent,@title,@icon,@color,@body,@focus,@ord,0,@ts,@ts)`)
+const addPage = ({ parent = null, title, icon = '📄', color = null, body = '', focus = 0 }) => {
+  const id = newId()
+  insPage.run({ id, parent, title, icon, color, body, focus, ord: pageOrder++, ts })
+  return id
+}
+
+const degree = addPage({ title: 'Degree Planning', icon: '🎓', color: 'blue', focus: 1,
+  body: docOf(heading('Degree Planning'), para('Mapping out classes, requirements, and the long game.')) })
+addPage({ parent: degree, title: 'Fall 2026 courses', icon: '📚',
+  body: docOf(heading('Fall 2026 — shortlist'), bullets(['S&DS 365 — Intermediate ML', 'Econ elective', 'Language: Italian II']), para('Decide by course-selection deadline (Aug 21).')) })
+addPage({ parent: degree, title: 'Major requirements', icon: '✅',
+  body: docOf(heading('Requirements tracker'), checks([['Intro sequence', true], ['Methods requirement', false], ['Senior project', false]])) })
+
+const rotunda = addPage({ title: 'Rotunda', icon: '🚀', color: 'violet',
+  body: docOf(heading('Rotunda'), para('Founder brain-dump: product, fundraising, hiring.')) })
+addPage({ parent: rotunda, title: 'Investor Q&A prep', icon: '💬', focus: 1,
+  body: docOf(heading('Questions to nail'), bullets(['CAC / payback period', 'Why now', 'Moat vs incumbents', 'Team gaps and the hiring plan'])) })
+
+const jobs = addPage({ title: 'Job Applications', icon: '💼', color: 'emerald' })
+addPage({ parent: jobs, title: 'AI Training job — Radiology', icon: '🧠', focus: 1,
+  body: docOf(
+    heading('AI Training job — Radiology'),
+    para('Research-assistant role: literature review + ML on imaging data.'),
+    bullets(['Build the lit-review pipeline', 'Mass data + model training', 'Connect agent teams / MCP for the workflow']),
+  ) })
+
+const brainstorms = addPage({ title: 'Brainstorms', icon: '🧩', color: 'amber' })
+addPage({ parent: brainstorms, title: 'Weekly "what did I ship" digest', icon: '📈',
+  body: docOf(heading('Idea'), para('Auto-summarize what I worked on per project each Sunday — pull from task completions, rugby, and improvements.')) })
 
 console.log('✅ Seeded Life Manager with persona data.')
 process.exit(0)

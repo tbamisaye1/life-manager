@@ -188,6 +188,90 @@ CREATE TABLE IF NOT EXISTS integration_accounts (
   last_synced_at TEXT
 );
 
+-- Hierarchical pages: the OneNote/Notion-style notes workspace. A page can hold
+-- subpages to any depth (parent_id self-reference). body is TipTap JSON (string).
+CREATE TABLE IF NOT EXISTS pages (
+  id            TEXT PRIMARY KEY,
+  parent_id     TEXT REFERENCES pages(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL DEFAULT 'Untitled',
+  icon          TEXT,                            -- emoji
+  color         TEXT,                            -- optional accent for top sections
+  body          TEXT NOT NULL DEFAULT '',        -- TipTap JSON (stringified)
+  is_focus      INTEGER NOT NULL DEFAULT 0,      -- surface in the "Bored / Focus" list
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  archived      INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id);
+
+-- ===== Gym / Rehab tracking =====
+-- The exercise library.
+CREATE TABLE IF NOT EXISTS gym_exercises (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  category      TEXT NOT NULL DEFAULT 'strength', -- strength | rehab | mobility | conditioning
+  muscle_group  TEXT,
+  unit          TEXT NOT NULL DEFAULT 'kg',        -- kg | lb | bodyweight | band | time
+  rep_low       INTEGER NOT NULL DEFAULT 8,        -- target rep range
+  rep_high      INTEGER NOT NULL DEFAULT 12,
+  default_sets  INTEGER NOT NULL DEFAULT 3,
+  increment     REAL NOT NULL DEFAULT 2.5,         -- weight step for progression
+  notes         TEXT,
+  archived      INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+-- A day template ("Push", "Rehab", "Legs"). weekday (0=Sun..6=Sat) schedules it.
+CREATE TABLE IF NOT EXISTS gym_routines (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  emoji         TEXT,
+  color         TEXT NOT NULL DEFAULT 'violet',
+  weekday       INTEGER,                            -- null = unscheduled
+  notes         TEXT,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gym_routine_exercises (
+  id            TEXT PRIMARY KEY,
+  routine_id    TEXT NOT NULL REFERENCES gym_routines(id) ON DELETE CASCADE,
+  exercise_id   TEXT NOT NULL REFERENCES gym_exercises(id) ON DELETE CASCADE,
+  target_sets   INTEGER NOT NULL DEFAULT 3,
+  sort_order    INTEGER NOT NULL DEFAULT 0
+);
+
+-- An actual gym visit on a date.
+CREATE TABLE IF NOT EXISTS gym_workouts (
+  id            TEXT PRIMARY KEY,
+  date          TEXT NOT NULL,                      -- YYYY-MM-DD
+  routine_id    TEXT REFERENCES gym_routines(id) ON DELETE SET NULL,
+  title         TEXT,
+  notes         TEXT,
+  completed     INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+-- A single logged set within a workout.
+CREATE TABLE IF NOT EXISTS gym_sets (
+  id            TEXT PRIMARY KEY,
+  workout_id    TEXT NOT NULL REFERENCES gym_workouts(id) ON DELETE CASCADE,
+  exercise_id   TEXT NOT NULL REFERENCES gym_exercises(id) ON DELETE CASCADE,
+  set_number    INTEGER NOT NULL DEFAULT 1,
+  weight        REAL,
+  reps          INTEGER,
+  rpe           REAL,
+  done          INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gym_sets_workout ON gym_sets(workout_id);
+CREATE INDEX IF NOT EXISTS idx_gym_sets_exercise ON gym_sets(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_gym_workouts_date ON gym_workouts(date);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(start);
