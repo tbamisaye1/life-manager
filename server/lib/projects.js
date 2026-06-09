@@ -6,8 +6,8 @@ import { now } from './helpers.js'
  * something tied to a project (completes a task, logs a session, etc.) so the
  * "have I worked on X lately?" tracker stays accurate automatically.
  */
-export function touchProject(projectId) {
+export async function touchProject(projectId) {
   if (!projectId) return
-  db.prepare('UPDATE projects SET last_worked_at = ?, updated_at = ? WHERE id = ?')
+  await db.prepare('UPDATE projects SET last_worked_at = ?, updated_at = ? WHERE id = ?')
     .run(now(), now(), projectId)
 }

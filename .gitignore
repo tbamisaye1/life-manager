@@ -8,6 +8,8 @@ server/db/*.sqlite
 server/db/*.sqlite-shm
 server/db/*.sqlite-wal
 server/db/*.db
+server/db/life-manager.pglite/
+.vercel
 
 # Logs
 logs

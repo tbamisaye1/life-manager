@@ -2,17 +2,17 @@ import { db } from '../db/index.js'
 
 // Pull the most recent prior performance of an exercise (optionally before a
 // given workout, so an in-progress session compares against the LAST one).
-export function lastPerformance(exerciseId, beforeWorkoutId = null) {
+export async function lastPerformance(exerciseId, beforeWorkoutId = null) {
   const params = { ex: exerciseId }
   let exclude = ''
   if (beforeWorkoutId) { exclude = 'AND w.id != @wid'; params.wid = beforeWorkoutId }
-  const lastWorkout = db.prepare(`
+  const lastWorkout = await db.prepare(`
     SELECT w.id, w.date FROM gym_workouts w
     JOIN gym_sets s ON s.workout_id = w.id
     WHERE s.exercise_id = @ex ${exclude}
     ORDER BY w.date DESC, w.created_at DESC LIMIT 1`).get(params)
   if (!lastWorkout) return null
-  const sets = db.prepare('SELECT * FROM gym_sets WHERE workout_id = ? AND exercise_id = ? ORDER BY set_number')
+  const sets = await db.prepare('SELECT * FROM gym_sets WHERE workout_id = ? AND exercise_id = ? ORDER BY set_number')
     .all(lastWorkout.id, exerciseId)
   return { workoutId: lastWorkout.id, date: lastWorkout.date, sets }
 }
@@ -23,8 +23,8 @@ export function lastPerformance(exerciseId, beforeWorkoutId = null) {
  * step; landed inside the range -> add a rep; missed the bottom -> ease off.
  * Rehab/mobility exercises hold weight and just nudge reps (gentler).
  */
-export function suggestForExercise(exercise, beforeWorkoutId = null, targetSets = null) {
-  const last = lastPerformance(exercise.id, beforeWorkoutId)
+export async function suggestForExercise(exercise, beforeWorkoutId = null, targetSets = null) {
+  const last = await lastPerformance(exercise.id, beforeWorkoutId)
   const sets = targetSets || exercise.default_sets || 3
   // band/bodyweight/time exercises aren't loaded by weight — progress on reps.
   const weighted = !['bodyweight', 'time', 'band'].includes(exercise.unit)

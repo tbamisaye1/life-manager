@@ -1,8 +1,6 @@
--- Life Manager local database schema (SQLite).
--- 100% local. No cloud, no AWS. One file lives in server/db/.
-
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+-- Life Manager database schema (Postgres dialect).
+-- Local dev runs this on embedded PGlite; production runs it on Neon Postgres.
+-- Isolated from any other project. No shared infrastructure.
 
 -- Projects / jobs the user is juggling (Rotunda, ISPS, labs, sisters, etc.)
 CREATE TABLE IF NOT EXISTS projects (

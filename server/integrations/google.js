@@ -23,21 +23,21 @@ function oauthClient() {
   )
 }
 
-function storedAccount() {
+async function storedAccount() {
   return db.prepare("SELECT * FROM integration_accounts WHERE provider = 'google'").get()
 }
 
-export function isConnected() {
-  const a = storedAccount()
+export async function isConnected() {
+  const a = await storedAccount()
   return Boolean(a && a.access_token)
 }
 
-export function status() {
-  const a = storedAccount()
+export async function status() {
+  const a = await storedAccount()
   return {
     provider: 'google',
     configured: isConfigured(),
-    connected: isConnected(),
+    connected: Boolean(a && a.access_token),
     account: a?.account_label || null,
     lastSyncedAt: a?.last_synced_at || null,
   }
@@ -65,7 +65,7 @@ export async function handleCallback(code) {
     email = me.data.email || email
   } catch { /* non-fatal */ }
   const ts = now()
-  db.prepare(`INSERT INTO integration_accounts (provider,account_label,access_token,refresh_token,expiry,scope,raw,connected_at)
+  await db.prepare(`INSERT INTO integration_accounts (provider,account_label,access_token,refresh_token,expiry,scope,raw,connected_at)
     VALUES ('google',@label,@access,@refresh,@expiry,@scope,@raw,@ts)
     ON CONFLICT(provider) DO UPDATE SET account_label=@label, access_token=@access,
       refresh_token=COALESCE(@refresh, refresh_token), expiry=@expiry, scope=@scope, raw=@raw, connected_at=@ts`).run({
@@ -80,12 +80,12 @@ export async function handleCallback(code) {
   return { email }
 }
 
-export function disconnect() {
-  db.prepare("DELETE FROM integration_accounts WHERE provider = 'google'").run()
+export async function disconnect() {
+  await db.prepare("DELETE FROM integration_accounts WHERE provider = 'google'").run()
 }
 
-function authedClient() {
-  const a = storedAccount()
+async function authedClient() {
+  const a = await storedAccount()
   if (!a?.access_token) return null
   const client = oauthClient()
   client.setCredentials({
@@ -98,7 +98,7 @@ function authedClient() {
 
 /** Pull upcoming Google Calendar events into the local events table. */
 export async function syncCalendar() {
-  const auth = authedClient()
+  const auth = await authedClient()
   if (!auth) return { synced: 0 }
   const cal = google.calendar({ version: 'v3', auth })
   const res = await cal.events.list({
@@ -115,40 +115,40 @@ export async function syncCalendar() {
     ON CONFLICT(id) DO NOTHING`)
   let n = 0
   for (const e of res.data.items || []) {
-    const exists = db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
+    const exists = await db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
     const start = e.start?.dateTime || e.start?.date
     if (!start) continue
     if (exists) {
-      db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@all_day, location=@location, updated_at=@ts WHERE id=@id`).run({
+      await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@all_day, location=@location, updated_at=@ts WHERE id=@id`).run({
         id: exists.id, title: e.summary || '(no title)', start, end: e.end?.dateTime || e.end?.date || start,
         all_day: e.start?.date ? 1 : 0, location: e.location || '', ts,
       })
     } else {
-      upsert.run({ id: newId(), title: e.summary || '(no title)', start, end: e.end?.dateTime || e.end?.date || start,
+      await upsert.run({ id: newId(), title: e.summary || '(no title)', start, end: e.end?.dateTime || e.end?.date || start,
         all_day: e.start?.date ? 1 : 0, location: e.location || '', notes: e.description || '', ext: e.id, ts })
     }
     n++
   }
-  markSynced()
+  await markSynced()
   return { synced: n }
 }
 
 /** Pull recent Gmail messages into the local emails table. */
 export async function syncGmail() {
-  const auth = authedClient()
+  const auth = await authedClient()
   if (!auth) return { synced: 0 }
   const gmail = google.gmail({ version: 'v1', auth })
   const list = await gmail.users.messages.list({ userId: 'me', maxResults: 20, q: 'in:inbox' })
   const ts = now()
   let n = 0
   for (const m of list.data.messages || []) {
-    if (db.prepare("SELECT id FROM emails WHERE source='google' AND external_id=?").get(m.id)) continue
+    if (await db.prepare("SELECT id FROM emails WHERE source='google' AND external_id=?").get(m.id)) continue
     const msg = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] })
     const headers = Object.fromEntries((msg.data.payload?.headers || []).map((h) => [h.name, h.value]))
     const from = headers.From || ''
     const fromName = from.replace(/<.*>/, '').trim().replace(/"/g, '') || from
     const fromEmail = (from.match(/<(.+)>/)?.[1]) || from
-    db.prepare(`INSERT INTO emails (id,from_name,from_email,subject,snippet,body,received_at,is_read,pinned,needs_reply,source,external_id,created_at,updated_at)
+    await db.prepare(`INSERT INTO emails (id,from_name,from_email,subject,snippet,body,received_at,is_read,pinned,needs_reply,source,external_id,created_at,updated_at)
       VALUES (@id,@fn,@fe,@sub,@snip,@snip,@recv,@read,0,0,'google',@ext,@ts,@ts)`).run({
       id: newId(), fn: fromName, fe: fromEmail, sub: headers.Subject || '(no subject)',
       snip: msg.data.snippet || '', recv: headers.Date ? new Date(headers.Date).toISOString() : ts,
@@ -156,16 +156,16 @@ export async function syncGmail() {
     })
     n++
   }
-  markSynced()
+  await markSynced()
   return { synced: n }
 }
 
-function markSynced() {
-  db.prepare("UPDATE integration_accounts SET last_synced_at=? WHERE provider='google'").run(now())
+async function markSynced() {
+  await db.prepare("UPDATE integration_accounts SET last_synced_at=? WHERE provider='google'").run(now())
 }
 
 export async function syncAll() {
-  if (!isConnected()) return { calendar: 0, gmail: 0, connected: false }
+  if (!await isConnected()) return { calendar: 0, gmail: 0, connected: false }
   const [calendar, gmail] = await Promise.all([syncCalendar(), syncGmail()])
   return { calendar: calendar.synced, gmail: gmail.synced, connected: true }
 }

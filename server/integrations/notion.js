@@ -8,25 +8,26 @@ export function isConfigured() {
   return Boolean(process.env.NOTION_TOKEN || (process.env.NOTION_CLIENT_ID && process.env.NOTION_CLIENT_SECRET))
 }
 
-function storedAccount() {
+async function storedAccount() {
   return db.prepare("SELECT * FROM integration_accounts WHERE provider = 'notion'").get()
 }
 
-function token() {
+async function token() {
   if (process.env.NOTION_TOKEN) return process.env.NOTION_TOKEN
-  return storedAccount()?.access_token || null
+  const a = await storedAccount()
+  return a?.access_token || null
 }
 
-export function isConnected() {
-  return Boolean(token())
+export async function isConnected() {
+  return Boolean(await token())
 }
 
-export function status() {
-  const a = storedAccount()
+export async function status() {
+  const a = await storedAccount()
   return {
     provider: 'notion',
     configured: isConfigured(),
-    connected: isConnected(),
+    connected: Boolean(process.env.NOTION_TOKEN || a?.access_token),
     account: a?.account_label || (process.env.NOTION_TOKEN ? 'internal token' : null),
     lastSyncedAt: a?.last_synced_at || null,
   }
@@ -54,7 +55,7 @@ export async function handleCallback(code) {
   if (!res.ok) throw new Error(`Notion token exchange failed: ${res.status}`)
   const data = await res.json()
   const ts = now()
-  db.prepare(`INSERT INTO integration_accounts (provider,account_label,access_token,raw,connected_at)
+  await db.prepare(`INSERT INTO integration_accounts (provider,account_label,access_token,raw,connected_at)
     VALUES ('notion',@label,@access,@raw,@ts)
     ON CONFLICT(provider) DO UPDATE SET account_label=@label, access_token=@access, raw=@raw, connected_at=@ts`).run({
     label: data.workspace_name || 'Notion workspace',
@@ -65,12 +66,12 @@ export async function handleCallback(code) {
   return { workspace: data.workspace_name }
 }
 
-export function disconnect() {
-  db.prepare("DELETE FROM integration_accounts WHERE provider = 'notion'").run()
+export async function disconnect() {
+  await db.prepare("DELETE FROM integration_accounts WHERE provider = 'notion'").run()
 }
 
-function client() {
-  const t = token()
+async function client() {
+  const t = await token()
   return t ? new Client({ auth: t }) : null
 }
 
@@ -93,7 +94,7 @@ function readProp(prop) {
  * database id (from the Notion DB URL). Maps common property names heuristically.
  */
 export async function syncTasksFromDatabase(databaseId) {
-  const notion = client()
+  const notion = await client()
   if (!notion || !databaseId) return { synced: 0 }
   const res = await notion.databases.query({ database_id: databaseId, page_size: 100 })
   const ts = now()
@@ -107,17 +108,17 @@ export async function syncTasksFromDatabase(databaseId) {
     const due = dateKey ? readProp(props[dateKey]) : ''
     const rawStatus = statusKey ? readProp(props[statusKey]) : 'todo'
     const status = /done|complete/i.test(rawStatus) ? 'done' : 'todo'
-    const existing = db.prepare("SELECT id FROM tasks WHERE source='notion' AND external_id=?").get(page.id)
+    const existing = await db.prepare("SELECT id FROM tasks WHERE source='notion' AND external_id=?").get(page.id)
     if (existing) {
-      db.prepare(`UPDATE tasks SET title=@title, due_date=@due, status=@status, updated_at=@ts WHERE id=@id`)
+      await db.prepare(`UPDATE tasks SET title=@title, due_date=@due, status=@status, updated_at=@ts WHERE id=@id`)
         .run({ id: existing.id, title, due: due || null, status, ts })
     } else {
-      db.prepare(`INSERT INTO tasks (id,title,status,due_date,priority,recurrence,notes,source,external_id,created_at,updated_at)
+      await db.prepare(`INSERT INTO tasks (id,title,status,due_date,priority,recurrence,notes,source,external_id,created_at,updated_at)
         VALUES (@id,@title,@status,@due,'normal','single','','notion',@ext,@ts,@ts)`)
         .run({ id: newId(), title, status, due: due || null, ext: page.id, ts })
     }
     n++
   }
-  db.prepare("UPDATE integration_accounts SET last_synced_at=? WHERE provider='notion'").run(ts)
+  await db.prepare("UPDATE integration_accounts SET last_synced_at=? WHERE provider='notion'").run(ts)
   return { synced: n }
 }
