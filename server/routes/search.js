@@ -34,7 +34,7 @@ router.get('/', (req, res) => {
     (r) => ({ type: 'bored', id: r.id, title: r.title, subtitle: 'Bored list', path: '/bored' }))
 
   add(db.prepare("SELECT id, subject, from_name FROM emails WHERE subject LIKE ? OR from_name LIKE ? ORDER BY received_at DESC LIMIT 5").all(like, like),
-    (r) => ({ type: 'email', id: r.id, title: r.subject || '(no subject)', subtitle: `Email · ${r.from_name || ''}`.trim(), path: '/email' }))
+    (r) => ({ type: 'email', id: r.id, title: r.subject || '(no subject)', subtitle: r.from_name ? `Email · ${r.from_name}` : 'Email', path: '/email' }))
 
   add(db.prepare("SELECT id, name, category FROM gym_exercises WHERE archived = 0 AND name LIKE ? LIMIT 5").all(like),
     (r) => ({ type: 'exercise', id: r.id, title: r.name, subtitle: `Exercise · ${r.category}`, path: '/gym' }))

@@ -23,10 +23,10 @@ export function BoredItemRow({ item, onToggle, onOpen, onDelete, highlighted }) 
           item.done ? 'text-zinc-400 line-through' : 'text-zinc-800')}
       >
         <span className="truncate">{item.title}</span>
-        {hasDetail(item.body) && <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-300" />}
+        {hasDetail(item.body) && <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-400" />}
       </button>
       <Badge tone={cat.tone}>{cat.label}</Badge>
-      <IconButton label="Delete" onClick={() => onDelete(item.id)} className="opacity-0 group-hover:opacity-100">
+      <IconButton label="Delete" onClick={() => window.confirm(`Delete “${item.title}”?`) && onDelete(item.id)} className="opacity-0 group-hover:opacity-100">
         <Trash2 className="h-3.5 w-3.5" />
       </IconButton>
     </div>

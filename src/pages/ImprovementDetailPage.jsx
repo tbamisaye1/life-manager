@@ -32,6 +32,7 @@ export default function ImprovementDetailPage() {
   }
 
   const del = async () => {
+    if (!window.confirm(`Delete the goal “${im.title}”?`)) return
     await remove.mutateAsync(im.id)
     navigate('/improvements')
   }

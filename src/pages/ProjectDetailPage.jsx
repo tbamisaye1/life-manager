@@ -31,7 +31,11 @@ export default function ProjectDetailPage() {
   if (isError || !project) return <ErrorState message="Couldn't load this project" onRetry={refetch} />
 
   const openTasks = (project.tasks || []).filter((t) => t.status !== 'done')
-  const del = async () => { await remove.mutateAsync(project.id); navigate('/projects') }
+  const del = async () => {
+    if (!window.confirm(`Delete “${project.name}”? Its tasks and events will be unlinked.`)) return
+    await remove.mutateAsync(project.id)
+    navigate('/projects')
+  }
 
   return (
     <div className="mx-auto max-w-3xl">

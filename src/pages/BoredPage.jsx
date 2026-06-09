@@ -29,7 +29,7 @@ export default function BoredPage() {
     create.mutate({ title: adding.trim() })
     setAdding('')
   }
-  const toggle = (i) => update.mutate({ id: i.id, done: !i.done })
+  const toggle = (i) => { if (picked === i.id) setPicked(null); update.mutate({ id: i.id, done: !i.done }) }
   const pickOne = () => {
     if (!open.length) return
     setPicked(open[Math.floor(Math.random() * open.length)].id)
@@ -70,7 +70,7 @@ export default function BoredPage() {
 
           {done.length > 0 && (
             <div>
-              <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Done</p>
+              <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Done</p>
               <Card className="overflow-hidden opacity-70">
                 <div className="divide-y divide-zinc-100">
                   {done.map((i) => (
@@ -85,14 +85,14 @@ export default function BoredPage() {
 
       {focusPages.length > 0 && (
         <div className="mt-8">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Flagged pages</p>
+          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Flagged pages</p>
           <div className="space-y-2">
             {focusPages.map((p) => (
               <Link key={p.id} to={`/notes/${p.id}`}>
                 <Card interactive className="flex items-center gap-3 p-3">
                   <span className="text-lg">{p.icon || <FileText className="h-4 w-4 text-zinc-400" />}</span>
                   <span className="flex-1 truncate text-sm font-medium text-zinc-700">{p.title}</span>
-                  <ArrowRight className="h-4 w-4 text-zinc-300" />
+                  <ArrowRight className="h-4 w-4 text-zinc-400" />
                 </Card>
               </Link>
             ))}

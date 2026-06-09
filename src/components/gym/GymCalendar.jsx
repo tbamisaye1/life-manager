@@ -47,8 +47,8 @@ function WorkoutChip({ workout, onClick }) {
       className={cn(
         'w-full truncate rounded px-1.5 py-0.5 text-left text-xs font-medium transition-opacity hover:opacity-75',
         workout.completed
-          ? 'bg-violet-100 text-violet-700'
-          : 'border border-dashed border-violet-300 bg-violet-50 text-violet-500',
+          ? 'bg-accent-100 text-accent-700'
+          : 'border border-dashed border-accent-200 bg-accent-50 text-accent-600',
       )}
     >
       {workout.title}
@@ -66,7 +66,7 @@ function GymDayCell({ date, workouts, isCurrentMonth, onWorkoutClick }) {
   return (
     <div
       className={cn(
-        'min-h-[96px] border-b border-r border-zinc-100 p-1.5 pb-2',
+        'min-h-[108px] border-b border-r border-zinc-100 p-1.5 pb-2',
         !isCurrentMonth && 'bg-zinc-50/60',
       )}
     >

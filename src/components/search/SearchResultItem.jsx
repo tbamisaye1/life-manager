@@ -51,12 +51,12 @@ export function SearchResultItem({ result, active, onClick, ...rest }) {
       onClick={onClick}
       {...rest}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
-        active ? 'bg-accent-50 text-zinc-900' : 'text-zinc-700 hover:bg-zinc-50',
+        'flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-left transition-colors',
+        active ? 'border-accent-500 bg-zinc-100 text-zinc-900' : 'border-transparent text-zinc-700 hover:bg-zinc-100',
       )}
     >
       {/* Type icon or page emoji */}
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-400">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500">
         {icon ? (
           <span className="text-base leading-none">{icon}</span>
         ) : (
@@ -73,7 +73,7 @@ export function SearchResultItem({ result, active, onClick, ...rest }) {
       </span>
 
       {/* Type label chip */}
-      <span className="shrink-0 rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500">
+      <span className="shrink-0 rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
         {typeLabel}
       </span>
     </button>

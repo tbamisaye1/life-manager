@@ -42,7 +42,7 @@ export function SkillRow({ skill }) {
         >
           <Plus className="h-3.5 w-3.5" />
         </IconButton>
-        <IconButton label="Delete skill" onClick={() => deleteSkill.mutate(id)} className="opacity-0 group-hover:opacity-100">
+        <IconButton label="Delete skill" onClick={() => window.confirm(`Delete “${name}”?`) && deleteSkill.mutate(id)} className="opacity-0 group-hover:opacity-100">
           <Trash2 className="h-3.5 w-3.5" />
         </IconButton>
       </div>

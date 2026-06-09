@@ -44,7 +44,7 @@ export function SessionCard({ session }) {
                 {rating}/10
               </div>
             )}
-            <IconButton label="Delete session" onClick={() => remove.mutate(id)} className="opacity-0 group-hover:opacity-100">
+            <IconButton label="Delete session" onClick={() => window.confirm('Delete this session?') && remove.mutate(id)} className="opacity-0 group-hover:opacity-100">
               <Trash2 className="h-3.5 w-3.5" />
             </IconButton>
           </div>

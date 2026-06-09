@@ -6,11 +6,11 @@ import { boredItems as boredResource } from '../../hooks/resources'
 import { BORED_CATEGORIES } from './categories'
 
 /**
- * Create or edit a Bored-list item. Pass item=null to create.
- * Parent passes a `key` tied to the item id so it re-seeds per item.
+ * Edit a Bored-list item (title, icon, category, rich detail body). New items
+ * are created title-only via the inline quick-add on the page, then opened here
+ * to add detail. Parent passes key={item?.id} so it re-seeds per item.
  */
 export function BoredItemModal({ item, open, onClose }) {
-  const create = boredResource.useCreate()
   const update = boredResource.useUpdate()
   const remove = boredResource.useRemove()
   const [title, setTitle] = useState(item?.title || '')
@@ -18,26 +18,30 @@ export function BoredItemModal({ item, open, onClose }) {
   const [category, setCategory] = useState(item?.category || 'other')
   const body = useRef(item?.body || '')
 
+  if (!item) return null
+
   const save = async () => {
     if (!title.trim()) return
-    if (item?.id) await update.mutateAsync({ id: item.id, title, emoji, category, body: body.current })
-    else await create.mutateAsync({ title, emoji, category })
+    await update.mutateAsync({ id: item.id, title, emoji, category, body: body.current })
     onClose()
   }
-  const del = async () => { if (item?.id) await remove.mutateAsync(item.id); onClose() }
-  const pending = create.isPending || update.isPending
+  const del = async () => {
+    if (!window.confirm(`Delete “${item.title}”?`)) return
+    await remove.mutateAsync(item.id)
+    onClose()
+  }
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={item?.id ? 'Edit item' : 'New bored-list item'}
+      title="Edit item"
       className="max-w-2xl"
       footer={
         <>
-          {item?.id && <Button variant="danger" onClick={del} className="mr-auto"><Trash2 className="h-4 w-4" /> Delete</Button>}
+          <Button variant="danger" onClick={del} className="mr-auto"><Trash2 className="h-4 w-4" /> Delete</Button>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} disabled={!title.trim() || pending}>Save</Button>
+          <Button variant="primary" onClick={save} disabled={!title.trim() || update.isPending}>Save</Button>
         </>
       }
     >
@@ -58,14 +62,12 @@ export function BoredItemModal({ item, open, onClose }) {
             </Select>
           </div>
         </div>
-        {item?.id && (
-          <div>
-            <Label>Notes &amp; detail</Label>
-            <div className="rounded-lg border border-zinc-200 px-3 pb-2">
-              <RichEditor value={item.body} onChange={(v) => { body.current = v }} placeholder="Why you want to do this, links, sub-steps…" />
-            </div>
+        <div>
+          <Label>Notes &amp; detail</Label>
+          <div className="rounded-lg border border-zinc-200 px-3 py-2">
+            <RichEditor value={item.body} onChange={(v) => { body.current = v }} placeholder="Why you want to do this, links, sub-steps…" />
           </div>
-        )}
+        </div>
       </div>
     </Modal>
   )
