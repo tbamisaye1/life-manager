@@ -20,10 +20,13 @@ const DEFAULT_COLOR = 'blue'
 /**
  * Create or edit an event. Parent passes `key={event?.id ?? 'new'}` for clean
  * remount per event. When `event` is null, `prefillDate` seeds the start field.
- * Props: event (null = create), prefillDate (Date|null), open, onClose
+ * Props: event (null = create), prefillDate (Date|null), prefillStart (ISO string with time, e.g. "2026-06-09T14:00"), open, onClose
  */
-export function EventModal({ event, prefillDate, open, onClose }) {
+export function EventModal({ event, prefillDate, prefillStart, open, onClose }) {
   const isEditing = !!event
+
+  // prefillStart (ISO with time) takes priority over prefillDate for timed events
+  const hasPrefillTime = !isEditing && !!prefillStart
 
   const initialDraft = isEditing
     ? {
@@ -38,9 +41,9 @@ export function EventModal({ event, prefillDate, open, onClose }) {
       }
     : {
         title: '',
-        start: prefillDate ? dateToDate(prefillDate) : '',
-        end: prefillDate ? dateToDate(prefillDate) : '',
-        all_day: true,
+        start: hasPrefillTime ? prefillStart.slice(0, 16) : (prefillDate ? dateToDate(prefillDate) : ''),
+        end: hasPrefillTime ? prefillStart.slice(0, 16) : (prefillDate ? dateToDate(prefillDate) : ''),
+        all_day: hasPrefillTime ? false : true,
         location: '',
         notes: '',
         color: DEFAULT_COLOR,

@@ -37,14 +37,20 @@ router.get('/today', async (req, res) => {
   const needsReply = (await db.prepare('SELECT COUNT(*) c FROM emails WHERE needs_reply = 1').get()).c
   const replyQueue = (await db.prepare('SELECT COUNT(*) c FROM reply_queue WHERE done = 0').get()).c
 
+  // Pinned: open high/urgent tasks — surfaced in the header so they can't be missed.
+  const pinned = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+    WHERE t.status != 'done' AND t.priority IN ('high','urgent')
+    ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, (t.due_date IS NULL), t.due_date`).all()
+
   res.json({
     date: todayDate,
     events,
     dueToday,
     overdue,
     dueThisWeek,
+    pinned,
     priorities: priorities.map((p) => ({ ...p, done_for_period: isDoneForPeriod(p) })),
-    counts: { needsReply, replyQueue, overdue: overdue.length, dueToday: dueToday.length, dueThisWeek: dueThisWeek.length },
+    counts: { needsReply, replyQueue, overdue: overdue.length, dueToday: dueToday.length, dueThisWeek: dueThisWeek.length, pinned: pinned.length },
   })
 })
 

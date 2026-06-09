@@ -1,5 +1,5 @@
 import {
-  Sun, CheckSquare, Calendar, ListChecks, Sparkles, TrendingUp,
+  Sun, Bot, CalendarClock, CheckSquare, Calendar, ListChecks, Sparkles, TrendingUp,
   FolderKanban, Mail, StickyNote, MessageSquare, Dumbbell, Trophy, Settings,
 } from 'lucide-react'
 
@@ -10,8 +10,11 @@ export const NAV_SECTIONS = [
     label: 'Overview',
     items: [
       { path: '/today', label: 'Today', icon: Sun },
+      { path: '/assistant', label: 'Assistant', icon: Bot },
+      { path: '/schedule', label: 'Daily Schedule', icon: CalendarClock },
       { path: '/calendar', label: 'Calendar', icon: Calendar },
       { path: '/tasks', label: 'Tasks', icon: CheckSquare },
+      { path: '/notes', label: 'Notes & Ideas', icon: StickyNote },
       { path: '/priorities', label: 'Daily Priorities', icon: ListChecks },
     ],
   },
@@ -30,14 +33,13 @@ export const NAV_SECTIONS = [
     items: [
       { path: '/email', label: 'Email', icon: Mail },
       { path: '/replies', label: 'Reply Queue', icon: MessageSquare },
-      { path: '/notes', label: 'Notes & Ideas', icon: StickyNote },
     ],
   },
 ]
 
 export const SETTINGS_ITEM = { path: '/settings', label: 'Settings & Sync', icon: Settings }
 
-// Flat lookup: path -> { label, iconName } for recents + breadcrumbs.
+// Flat lookup: path -> { label, icon } for recents, breadcrumbs, favorites star.
 const FLAT = {}
 for (const section of NAV_SECTIONS) {
   for (const item of section.items) FLAT[item.path] = item
