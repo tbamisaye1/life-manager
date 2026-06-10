@@ -91,6 +91,8 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     target: isEditing
       ? (event.source === 'google' && event.google_account ? `${event.google_account}::${event.google_calendar_id}` : 'local')
       : defaultTarget,
+    repeat: 'none',
+    weekdays: [],
   })
   const { data: projectList = [] } = projectsResource.useList()
   const create = eventsResource.useCreate()
@@ -104,6 +106,33 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
       queryClient.invalidateQueries({ queryKey: ['today'] })
     },
   })
+  const createLocalRecurring = useMutation({
+    mutationFn: (body) => api.post('/events/recurring', body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['today'] })
+    },
+  })
+
+  const REPEAT_OPTS = [
+    { value: 'none', label: 'Does not repeat' },
+    { value: 'daily', label: 'Daily' },
+    { value: 'weekdays', label: 'Weekdays (Mon–Fri)' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'custom', label: 'Custom days' },
+  ]
+  const WD = [{ v: 1, l: 'M' }, { v: 2, l: 'T' }, { v: 3, l: 'W' }, { v: 4, l: 'T' }, { v: 5, l: 'F' }, { v: 6, l: 'S' }, { v: 0, l: 'S' }]
+  const isRepeating = !isEditing && draft.repeat !== 'none'
+
+  // Map the repeat choice to recurrence fields for the API.
+  const recurrenceFields = () => {
+    const f = {}
+    if (draft.repeat === 'daily') f.frequency = 'daily'
+    else if (draft.repeat === 'weekdays') f.weekdays = [1, 2, 3, 4, 5]
+    else if (draft.repeat === 'weekly') f.weekdays = [new Date(`${draft.start.slice(0, 10)}T00:00:00`).getDay()]
+    else if (draft.repeat === 'custom') f.weekdays = draft.weekdays
+    return f
+  }
 
   const targetMeta = targets.find((t) => t.value === draft.target) || targets[0]
   const isGoogleTarget = !isEditing && targetMeta && !targetMeta.isLocal
@@ -133,7 +162,15 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     if (isEditing) {
       await update.mutateAsync({ id: event.id, ...payload })
     } else if (isGoogleTarget) {
-      await createGoogle.mutateAsync({ ...payload, email: targetMeta.email, calendar_id: targetMeta.calendarId })
+      await createGoogle.mutateAsync({ ...payload, email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
+    } else if (isRepeating) {
+      await createLocalRecurring.mutateAsync({
+        title: payload.title, all_day: payload.all_day, location: payload.location, notes: payload.notes,
+        color: payload.color, flagship: payload.flagship, start_date: draft.start.slice(0, 10),
+        start_time: draft.all_day ? undefined : draft.start.slice(11, 16),
+        end_time: draft.all_day ? undefined : (draft.end || draft.start).slice(11, 16),
+        ...recurrenceFields(),
+      })
     } else {
       await create.mutateAsync(payload)
     }
@@ -145,7 +182,8 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     onClose()
   }
 
-  const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending
+  const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending || createLocalRecurring.isPending
+  const customInvalid = draft.repeat === 'custom' && draft.weekdays.length === 0
 
   return (
     <Modal
@@ -163,7 +201,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
           <Button
             variant="primary"
             onClick={save}
-            disabled={isPending || !draft.title.trim()}
+            disabled={isPending || !draft.title.trim() || customInvalid}
           >
             {isPending ? 'Saving…' : 'Save'}
           </Button>
@@ -195,6 +233,33 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         )}
         {isEditing && event.source === 'google' && (
           <p className="text-xs text-zinc-500">On Google Calendar · {event.google_account}</p>
+        )}
+
+        {/* Repeat (create mode) */}
+        {!isEditing && (
+          <div>
+            <Label>Repeat</Label>
+            <Select value={draft.repeat} onChange={(e) => set({ repeat: e.target.value })}>
+              {REPEAT_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            {draft.repeat === 'custom' && (
+              <div className="mt-2 flex gap-1.5">
+                {WD.map((d) => {
+                  const on = draft.weekdays.includes(d.v)
+                  return (
+                    <button
+                      key={d.v}
+                      type="button"
+                      onClick={() => set({ weekdays: on ? draft.weekdays.filter((x) => x !== d.v) : [...draft.weekdays, d.v] })}
+                      className={cn('h-8 w-8 rounded-full text-sm font-semibold', on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600')}
+                    >
+                      {d.l}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         {/* All-day toggle */}
