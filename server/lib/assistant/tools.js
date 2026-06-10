@@ -53,14 +53,33 @@ export function buildTools(record) {
     },
   )
 
+  const isLocalOnly = (calendar) => calendar && /^(local|app|life ?manager|none|just (the )?app)$/i.test(calendar.trim())
+
   const scheduleEvent = tool(
-    async ({ title, start, end, duration_minutes, all_day, location, notes, color, flagship, project }) => {
+    async ({ title, start, end, duration_minutes, all_day, location, notes, color, flagship, project, calendar }) => {
+      const finish = end || (all_day ? start : addMinutes(start, duration_minutes || 60))
+
+      // Default: put it on the default Google calendar (Yahoo) — which also
+      // shows in the app's daily schedule. Only stay app-local if asked.
+      if (!isLocalOnly(calendar)) {
+        let target = null
+        try { target = await googleI.resolveCalendarTarget(calendar) } catch { /* fall through */ }
+        if (target) {
+          const ev = await googleI.createEvent({
+            email: target.email, calendarId: target.calendarId, title,
+            start, end: finish, allDay: !!all_day, location, notes,
+          })
+          record(`📅 Scheduled “${title}” on ${target.email}`)
+          return JSON.stringify({ ok: true, id: ev.id, calendar: target.email, start, end: finish })
+        }
+        // calendar named but not found
+        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try yahoo, yale, rotunda, or say "local".` })
+        // else: no Google connected → fall through to a local event
+      }
+
       const ts = now()
       const id = newId()
-      const finish = end || (all_day ? start : addMinutes(start, duration_minutes || 60))
       const projectId = await resolveProjectId(project)
-      // flagship defaults to 0: assistant blocks live on the daily schedule, not
-      // the month Calendar overview — unless the user asks for a flagship event.
       await db
         .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,project_id,source,created_at,updated_at)
           VALUES (@id,@title,@start,@end,@all_day,@location,@notes,@color,@flagship,@pid,'assistant',@ts,@ts)`)
@@ -69,14 +88,15 @@ export function buildTools(record) {
           location: location || '', notes: notes || '', color: color || 'blue',
           flagship: flagship ? 1 : 0, pid: projectId, ts,
         })
-      record(`📅 Scheduled “${title}”`)
-      return JSON.stringify({ ok: true, id, title, start, end: finish })
+      record(`📅 Scheduled “${title}” (app only)`)
+      return JSON.stringify({ ok: true, id, title, start, end: finish, calendar: 'local' })
     },
     {
       name: 'schedule_event',
-      description: 'Create an event. Default is a normal daily-schedule block; set flagship=true for a big overview/month-calendar event. Can include location, notes, colour, and a project.',
+      description: 'Create an event. By DEFAULT it goes on the default Google calendar (Yahoo) and also appears in the app schedule. Pass calendar="yale"/"rotunda"/"yahoo" (or a calendar name) to target another; pass calendar="local" to keep it only in the app. Set flagship=true for a big month-overview event (local only).',
       schema: z.object({
         title: z.string(),
+        calendar: z.string().optional().describe('Where to put it: omit for default (Yahoo); "yale"/"rotunda"/"yahoo"/a calendar name; or "local" for app-only.'),
         start: z.string().describe('local datetime, e.g. 2026-06-09T13:00:00'),
         end: z.string().optional(),
         duration_minutes: z.number().int().optional(),

@@ -29,7 +29,7 @@ function systemPrompt() {
     'Logging gym sets — CRITICAL: when the user gives a SET COUNT (e.g. "3 sets of 10", "5x5 at 100kg", "leg press 5 sets of 10 reps 12.5kg"), make exactly ONE call to log_sets with sets = that number. Do NOT call log_set in a loop and do NOT create more sets than asked — "3 sets" means exactly 3, "5 sets" means exactly 5. Use log_set only for a single one-off set.',
     '',
     'How to handle common requests:',
-    '- "schedule time to do X" → check get_schedule or find_free_slot for an open gap (working hours 08:00–22:00 unless told otherwise), then schedule_event at that slot with a sensible duration.',
+    '- "schedule time to do X" → check get_schedule or find_free_slot for an open gap (working hours 08:00–22:00 unless told otherwise), then schedule_event at that slot with a sensible duration. By DEFAULT events land on the Yahoo Google calendar (and show in the app) — only pass calendar="yale"/"rotunda" when the user names that calendar, or calendar="local" if they say keep it in the app only.',
     '- "clear my schedule (for a day)" → call get_schedule for that day, then clear_day. NEVER re-create events to clear them.',
     '- "delete/clear all my X events" or "remove every X on <account>, every day" → ONE call to delete_events with query (and account/date range if given). Do NOT loop day-by-day or call clear_day repeatedly.',
     '- "move / reschedule X" → get_schedule to find its id, then reschedule_event. Do not delete-and-recreate.',

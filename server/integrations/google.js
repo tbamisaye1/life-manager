@@ -274,6 +274,20 @@ export async function defaultTarget() {
   return cal ? { email: def.email, calendarId: cal.calendar_id } : null
 }
 
+// Resolve a free-text calendar/account hint ("yale", "rotunda", "yahoo", a
+// calendar name) to a {email, calendarId}. No hint → the default account's
+// primary. Returns null if there are no connected Google calendars.
+export async function resolveCalendarTarget(hint) {
+  if (!hint || !hint.trim()) return defaultTarget()
+  const f = `%${hint.trim()}%`
+  const row = await db.prepare(
+    `SELECT account_email, calendar_id FROM google_calendars
+     WHERE selected = 1 AND (account_email ILIKE ? OR summary ILIKE ?)
+     ORDER BY is_primary DESC LIMIT 1`,
+  ).get(f, f)
+  return row ? { email: row.account_email, calendarId: row.calendar_id } : null
+}
+
 function timeParts(start, end, allDay, tz) {
   if (allDay) return { start: { date: String(start).slice(0, 10) }, end: { date: String(end || start).slice(0, 10) } }
   return {
