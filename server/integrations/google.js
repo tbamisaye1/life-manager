@@ -322,6 +322,35 @@ export async function createEvent({ email, calendarId, title, start, end, allDay
   return db.prepare('SELECT * FROM events WHERE id = ?').get(id)
 }
 
+// Build a Google RRULE string from a simple recurrence spec.
+const RRULE_DOW = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+function buildRRULE({ frequency, weekdays, until, count }) {
+  const hasDays = Array.isArray(weekdays) && weekdays.length > 0
+  const freq = hasDays ? 'WEEKLY' : frequency === 'daily' ? 'DAILY' : 'WEEKLY'
+  const parts = [`FREQ=${freq}`]
+  if (hasDays) parts.push(`BYDAY=${weekdays.map((d) => RRULE_DOW[d]).join(',')}`)
+  if (count && count > 0) parts.push(`COUNT=${Math.min(count, 730)}`)
+  else if (until) parts.push(`UNTIL=${String(until).slice(0, 10).replace(/-/g, '')}T235959Z`)
+  return `RRULE:${parts.join(';')}`
+}
+
+// Create ONE native recurring event on Google (RRULE) — Google expands the
+// occurrences, so there's no per-instance looping. Then sync so the instances
+// mirror into the app. Returns { recurringEventId }.
+export async function createRecurringEvent({ email, calendarId, title, start, end, allDay, location, notes, frequency, weekdays, until, count }) {
+  const auth = await authedClientFor(email)
+  if (!auth) throw new Error('That Google account is not connected.')
+  const cal = google.calendar({ version: 'v3', auth })
+  const tz = await homeTimezone()
+  const { start: gStart, end: gEnd } = timeParts(start, end, allDay, tz)
+  const res = await cal.events.insert({
+    calendarId,
+    requestBody: { summary: title, location: location || '', description: notes || '', start: gStart, end: gEnd, recurrence: [buildRRULE({ frequency, weekdays, until, count })] },
+  })
+  await syncAccountCalendars(email).catch(() => {})
+  return { recurringEventId: res.data.id }
+}
+
 // Push a local edit of a google-sourced event back to Google. Returns true if pushed.
 export async function pushUpdate(event, patch) {
   if (event.source !== 'google' || !event.google_account || !event.external_id) return false

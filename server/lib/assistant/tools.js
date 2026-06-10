@@ -293,7 +293,30 @@ export function buildTools(record) {
   const COLOR_ENUM = z.enum(['blue', 'violet', 'emerald', 'amber', 'rose', 'orange', 'teal', 'slate', 'red'])
 
   const scheduleRecurringEvent = tool(
-    async ({ title, weekdays, frequency, start_time, end_time, duration_minutes, all_day, start_date, until_date, occurrences, location, notes, color, flagship, project }) => {
+    async ({ title, weekdays, frequency, start_time, end_time, duration_minutes, all_day, start_date, until_date, occurrences, location, notes, color, flagship, project, calendar }) => {
+      const day = start_date || localDateStr()
+      const startIso = all_day ? day : `${day}T${start_time || '09:00'}:00`
+      const endIso = all_day ? day : (end_time ? `${day}T${end_time}:00` : addMinutes(startIso, duration_minutes || 60))
+
+      // Default: a NATIVE recurring event on the default Google calendar (Yahoo).
+      // Google expands the occurrences — no per-instance looping. "local" keeps
+      // it as individual app-only events.
+      if (!isLocalOnly(calendar)) {
+        let target = null
+        try { target = await googleI.resolveCalendarTarget(calendar) } catch { /* fall through */ }
+        if (target) {
+          const r = await googleI.createRecurringEvent({
+            email: target.email, calendarId: target.calendarId, title,
+            start: startIso, end: endIso, allDay: !!all_day, location, notes,
+            frequency, weekdays, until: until_date, count: occurrences,
+          })
+          record(`📅 Scheduled recurring “${title}” on ${target.email}`)
+          return JSON.stringify({ ok: true, recurring: true, calendar: target.email, recurringEventId: r.recurringEventId })
+        }
+        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try yahoo, yale, rotunda, or say "local".` })
+        // no Google connected → fall through to local expansion
+      }
+
       const occ = expandRecurrence({
         frequency, weekdays, startDate: start_date, untilDate: until_date, occurrences,
         allDay: !!all_day, startTime: start_time, endTime: end_time, durationMinutes: duration_minutes,
@@ -318,9 +341,10 @@ export function buildTools(record) {
     {
       name: 'schedule_recurring_event',
       description:
-        'Create a REPEATING event as many individual occurrences. Use this for "every weekday", "every Mon/Wed/Fri", "daily", "every Tuesday", etc. — NOT schedule_event. Specify weekdays for specific days (0=Sun,1=Mon,…,6=Sat): Mon–Fri = [1,2,3,4,5], MWF = [1,3,5], weekends = [0,6]; omit weekdays for every single day. Give start_time/end_time in 24h HH:mm (e.g. 4–5pm = "16:00"/"17:00"). Defaults: starts today, ~8-week horizon unless until_date or occurrences is given.',
+        'Create a REPEATING event for "every weekday", "every Mon/Wed/Fri", "daily", "every Tuesday", etc. By DEFAULT it creates ONE native recurring event on the default Google calendar (Yahoo) — Google expands it, and it shows in the app. Pass calendar="yale"/"rotunda"/a name for another, or calendar="local" for app-only. Specify weekdays (0=Sun..6=Sat): Mon–Fri=[1,2,3,4,5], MWF=[1,3,5], weekends=[0,6]; omit for every day. Times in 24h HH:mm (4–5pm = "16:00"/"17:00").',
       schema: z.object({
         title: z.string(),
+        calendar: z.string().optional().describe('omit for default (Yahoo); "yale"/"rotunda"/a calendar name; or "local" for app-only'),
         weekdays: z.array(z.number().int().min(0).max(6)).optional().describe('0=Sun..6=Sat; omit for every day'),
         frequency: z.enum(['daily', 'weekly']).optional(),
         start_time: z.string().optional().describe('24h HH:mm, e.g. 16:00'),

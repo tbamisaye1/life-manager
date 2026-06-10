@@ -71,6 +71,14 @@ router.post('/google/events', asyncRoute(async (req, res) => {
     email = email || t.email
     calendarId = calendarId || t.calendarId
   }
+  const recurring = b.frequency || (Array.isArray(b.weekdays) && b.weekdays.length) || b.until || b.count
+  if (recurring) {
+    const r = await googleI.createRecurringEvent({
+      email, calendarId, title: b.title.trim(), start: b.start, end: b.end, allDay: !!b.all_day,
+      location: b.location, notes: b.notes, frequency: b.frequency, weekdays: b.weekdays, until: b.until, count: b.count,
+    })
+    return res.status(201).json({ ok: true, recurring: true, ...r })
+  }
   const event = await googleI.createEvent({
     email, calendarId, title: b.title.trim(), start: b.start, end: b.end,
     allDay: !!b.all_day, location: b.location, notes: b.notes, flagship: b.flagship,
