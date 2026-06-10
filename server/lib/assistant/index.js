@@ -30,7 +30,8 @@ function systemPrompt() {
     '',
     'How to handle common requests:',
     '- "schedule time to do X" → check get_schedule or find_free_slot for an open gap (working hours 08:00–22:00 unless told otherwise), then schedule_event at that slot with a sensible duration.',
-    '- "clear my schedule (for a day)" → call get_schedule for that day, then clear_day (or delete_event for specific items). NEVER re-create events to clear them.',
+    '- "clear my schedule (for a day)" → call get_schedule for that day, then clear_day. NEVER re-create events to clear them.',
+    '- "delete/clear all my X events" or "remove every X on <account>, every day" → ONE call to delete_events with query (and account/date range if given). Do NOT loop day-by-day or call clear_day repeatedly.',
     '- "move / reschedule X" → get_schedule to find its id, then reschedule_event. Do not delete-and-recreate.',
     '- "remind me / add a task to …" → create_task, with a due_date if a time is implied and a priority if it sounds important.',
     '- "make X urgent / high priority" → set_task_priority.',
@@ -63,9 +64,16 @@ export async function runAssistant(history) {
 
   const agent = createReactAgent({ llm: model, tools })
   const messages = [new SystemMessage(systemPrompt()), ...toLangChainMessages(history)]
-  const result = await agent.invoke({ messages })
-
-  return { configured: true, actions, reply: extractReply(result.messages) }
+  try {
+    const result = await agent.invoke({ messages }, { recursionLimit: 60 })
+    return { configured: true, actions, reply: extractReply(result.messages) }
+  } catch (err) {
+    // Never bubble a 500 to the chat — return whatever we managed, plus a note.
+    const note = actions.length
+      ? `I did ${actions.length} thing${actions.length === 1 ? '' : 's'} but then hit a snag: ${err.message}. Want me to keep going?`
+      : `Sorry — I ran into a problem with that: ${err.message}. Try narrowing it down or rephrasing.`
+    return { configured: true, actions, reply: note }
+  }
 }
 
 // The final answer is the last AI message; its content may be a string or an

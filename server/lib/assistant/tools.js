@@ -4,6 +4,7 @@ import { db } from '../../db/index.js'
 import { newId, now, localDateStr } from '../helpers.js'
 import { firstFreeSlot, addMinutes, resolveProjectId } from './tools-shared.js'
 import { expandRecurrence } from '../recurrence.js'
+import * as googleI from '../../integrations/google.js'
 import { buildGymTools } from './tools-gym.js'
 import { buildNotesTools } from './tools-notes.js'
 import { buildRugbyTools } from './tools-rugby.js'
@@ -333,6 +334,44 @@ export function buildTools(record) {
     },
   )
 
+  // Bulk-delete events matching a title fragment and/or Google account and/or
+  // date range — across ALL days unless from/to is given. One call instead of
+  // looping day-by-day. Pushes deletions through to Google for synced events.
+  const deleteEvents = tool(
+    async ({ query, account, from, to }) => {
+      const where = []
+      const params = []
+      if (query) { where.push('title ILIKE ?'); params.push(`%${query}%`) }
+      if (account) { where.push('google_account ILIKE ?'); params.push(`%${account}%`) }
+      if (from) { where.push('substr(start,1,10) >= ?'); params.push(from) }
+      if (to) { where.push('substr(start,1,10) <= ?'); params.push(to) }
+      if (!where.length) return JSON.stringify({ ok: false, message: 'Give a title query, a Google account, and/or a date range so I know what to delete.' })
+      const clause = where.join(' AND ')
+      const rows = await db.prepare(`SELECT * FROM events WHERE ${clause}`).all(...params)
+      if (!rows.length) return JSON.stringify({ ok: true, deleted: 0, message: 'No matching events found.' })
+      let googleRemoved = 0
+      for (const ev of rows) {
+        if (ev.source === 'google') {
+          try { await googleI.pushDelete(ev); googleRemoved++ } catch { /* keep going */ }
+        }
+      }
+      await db.prepare(`DELETE FROM events WHERE ${clause}`).run(...params)
+      record(`🗑️ Deleted ${rows.length} event${rows.length === 1 ? '' : 's'}${query ? ` matching “${query}”` : ''}`)
+      return JSON.stringify({ ok: true, deleted: rows.length, google_removed: googleRemoved })
+    },
+    {
+      name: 'delete_events',
+      description:
+        'Delete MANY events at once by a title fragment and/or a Google account and/or a date range — across ALL days unless from/to is given. Use this for "clear all my X events", "remove every Skill event on yahoo", "delete all gym blocks this week", etc. ALWAYS prefer this over clearing day-by-day. Deletions sync through to Google.',
+      schema: z.object({
+        query: z.string().optional().describe('title contains this (e.g. "Skill", "[To Do]")'),
+        account: z.string().optional().describe('limit to a Google account, fragment ok (e.g. "yahoo")'),
+        from: z.string().optional().describe('YYYY-MM-DD inclusive; omit to span all days'),
+        to: z.string().optional().describe('YYYY-MM-DD inclusive; omit to span all days'),
+      }),
+    },
+  )
+
   const clearDay = tool(
     async ({ date, include_all_day }) => {
       const day = date || localDateStr()
@@ -366,7 +405,7 @@ export function buildTools(record) {
 
   return [
     // Schedule / calendar
-    getSchedule, findFreeSlot, scheduleEvent, scheduleRecurringEvent, updateEvent, deleteEvent, deleteEventSeries, clearDay, rescheduleEvent,
+    getSchedule, findFreeSlot, scheduleEvent, scheduleRecurringEvent, updateEvent, deleteEvent, deleteEvents, deleteEventSeries, clearDay, rescheduleEvent,
     // Tasks
     createTask, updateTask, completeTask, deleteTask, setTaskPriority, listTasks,
     // Everything else, by domain
