@@ -20,8 +20,15 @@ import { WeekTimeline } from '../components/schedule/WeekTimeline'
 import { EventModal } from '../components/calendar/EventModal'
 import { EventChip } from '../components/calendar/EventChip'
 import { events as eventsResource } from '../hooks/resources'
+import { useGoogleAccounts } from '../hooks/useIntegrations'
 import { toISOLocal } from '../components/schedule/timeline'
 import { cn } from '../lib/cn'
+
+/** Short friendly label for an account from its email domain (yahoo.com → Yahoo). */
+function accountShortLabel(email) {
+  const d = (email.split('@')[1] || '').split('.')[0]
+  return d ? d.charAt(0).toUpperCase() + d.slice(1) : email
+}
 
 /** Format a Date to "yyyy-MM-dd" for the API query. */
 function toDateParam(date) {
@@ -55,6 +62,10 @@ export default function DailySchedulePage() {
   // Modal state: null = closed
   const [modal, setModal] = useState(null)
 
+  // Per-account view filter ('all' or an account email)
+  const [accountFilter, setAccountFilter] = useState('all')
+  const { data: gAccounts = [] } = useGoogleAccounts()
+
   // --- Date range for API query ---
   const weekStart = startOfWeek(anchorDate, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(anchorDate, { weekStartsOn: 1 })
@@ -68,7 +79,10 @@ export default function DailySchedulePage() {
     to: toParam,
   })
 
-  const { allDay, timed } = partitionEvents(eventsData)
+  const filteredEvents = accountFilter === 'all'
+    ? eventsData
+    : eventsData.filter((e) => e.google_account === accountFilter)
+  const { allDay, timed } = partitionEvents(filteredEvents)
 
   // --- Navigation ---
   const handlePrev = () => {
@@ -130,6 +144,26 @@ export default function DailySchedulePage() {
         onToday={handleToday}
         onNewEvent={openNewEvent}
       />
+
+      {/* Per-account filter — default shows all calendars */}
+      {gAccounts.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {[{ email: 'all', label: 'All calendars' }, ...gAccounts.map((a) => ({ email: a.email, label: accountShortLabel(a.email) }))].map((f) => (
+            <button
+              key={f.email}
+              onClick={() => setAccountFilter(f.email)}
+              className={cn(
+                'rounded-full border px-3 py-1 text-sm font-medium transition-colors',
+                accountFilter === f.email
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50',
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <Loading label="Loading schedule…" />
