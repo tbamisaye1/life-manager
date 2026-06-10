@@ -287,6 +287,12 @@ CREATE TABLE IF NOT EXISTS bored_items (
   updated_at    TEXT NOT NULL
 );
 
+-- Small key/value store for app-wide settings (e.g. home_timezone).
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- Connected Google accounts (multiple). Each holds its own OAuth tokens.
 CREATE TABLE IF NOT EXISTS google_accounts (
   email          TEXT PRIMARY KEY,

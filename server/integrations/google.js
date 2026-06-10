@@ -26,6 +26,31 @@ export function isConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 }
 
+// ─── Home timezone (display everything in the user's current location) ──────────
+async function getSetting(key, fallback) {
+  const row = await db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)
+  return row?.value ?? fallback
+}
+export async function homeTimezone() {
+  return getSetting('home_timezone', 'Europe/London')
+}
+export async function setHomeTimezone(tz) {
+  await db.prepare("INSERT INTO app_settings (key,value) VALUES ('home_timezone',@v) ON CONFLICT(key) DO UPDATE SET value=@v").run({ v: tz })
+}
+
+// Convert an absolute instant (ISO with offset or Z) to a NAIVE wall-clock
+// string in `tz`, so every calendar is normalised to the user's timezone.
+function instantToNaive(iso, tz) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(d).map((p) => [p.type, p.value]),
+  )
+  const hour = parts.hour === '24' ? '00' : parts.hour
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`
+}
+
 function oauthClient(redirectUri) {
   return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, redirectUri)
 }
@@ -164,6 +189,7 @@ async function syncAccountCalendars(email) {
   if (!auth) return 0
   const cal = google.calendar({ version: 'v3', auth })
   const calendars = await db.prepare('SELECT calendar_id, color FROM google_calendars WHERE account_email = ? AND selected = 1').all(email)
+  const tz = await homeTimezone()
   const timeMin = new Date(Date.now() - 14 * 864e5).toISOString()
   const timeMax = new Date(Date.now() + 120 * 864e5).toISOString()
   let n = 0
@@ -175,17 +201,22 @@ async function syncAccountCalendars(email) {
     const ts = now()
     for (const e of res.data.items || []) {
       if (e.status === 'cancelled') continue
-      const start = e.start?.dateTime || e.start?.date
-      if (!start) continue
-      const end = e.end?.dateTime || e.end?.date || start
-      const allDay = e.start?.date ? 1 : 0
+      const isAllDay = !!e.start?.date && !e.start?.dateTime
+      const rawStart = e.start?.dateTime || e.start?.date
+      if (!rawStart) continue
+      const rawEnd = e.end?.dateTime || e.end?.date || rawStart
+      // Normalise timed events to the user's home timezone; keep all-day as a date.
+      const start = isAllDay ? rawStart : instantToNaive(rawStart, tz)
+      const end = isAllDay ? rawEnd : instantToNaive(rawEnd, tz)
+      const allDay = isAllDay ? 1 : 0
       const existing = await db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
       if (existing) {
-        await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
+        // flagship=0: Google events live on the daily schedule, not the month overview.
+        await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, flagship=0, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
           .run({ id: existing.id, title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', email, cal: c.calendar_id, ts })
       } else {
         await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,external_id,google_account,google_calendar_id,created_at,updated_at)
-          VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,1,'google',@ext,@email,@cal,@ts,@ts)`)
+          VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,0,'google',@ext,@email,@cal,@ts,@ts)`)
           .run({ id: newId(), title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', ext: e.id, email, cal: c.calendar_id, ts })
       }
       n++
@@ -251,9 +282,6 @@ function timeParts(start, end, allDay, tz) {
   }
 }
 
-async function calTz(email, calendarId) {
-  return (await db.prepare('SELECT timezone FROM google_calendars WHERE account_email=? AND calendar_id=?').get(email, calendarId))?.timezone || null
-}
 async function calColor(email, calendarId) {
   return (await db.prepare('SELECT color FROM google_calendars WHERE account_email=? AND calendar_id=?').get(email, calendarId))?.color || 'blue'
 }
@@ -263,7 +291,7 @@ export async function createEvent({ email, calendarId, title, start, end, allDay
   const auth = await authedClientFor(email)
   if (!auth) throw new Error('That Google account is not connected.')
   const cal = google.calendar({ version: 'v3', auth })
-  const tz = await calTz(email, calendarId)
+  const tz = await homeTimezone()
   const { start: gStart, end: gEnd } = timeParts(start, end, allDay, tz)
   const res = await cal.events.insert({
     calendarId,
@@ -286,7 +314,7 @@ export async function pushUpdate(event, patch) {
   const auth = await authedClientFor(event.google_account)
   if (!auth) return false
   const cal = google.calendar({ version: 'v3', auth })
-  const tz = await calTz(event.google_account, event.google_calendar_id)
+  const tz = await homeTimezone()
   const body = {}
   if (patch.title !== undefined) body.summary = patch.title
   if (patch.location !== undefined) body.location = patch.location

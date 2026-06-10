@@ -78,6 +78,23 @@ router.post('/google/events', asyncRoute(async (req, res) => {
   res.status(201).json(event)
 }))
 
+// Home timezone — everything is displayed normalised to this zone. The mobile
+// app posts its device timezone so the schedule tracks the user's location.
+router.get('/google/settings', asyncRoute(async (req, res) => {
+  res.json({ home_timezone: await googleI.homeTimezone() })
+}))
+
+router.post('/google/settings', asyncRoute(async (req, res) => {
+  const tz = req.body?.home_timezone
+  if (!tz) return res.status(400).json(httpError('home_timezone required', 'VALIDATION'))
+  const current = await googleI.homeTimezone()
+  if (tz !== current) {
+    await googleI.setHomeTimezone(tz)
+    await googleI.syncAll().catch(() => {}) // re-normalise all events to the new zone
+  }
+  res.json({ home_timezone: tz, changed: tz !== current })
+}))
+
 router.post('/google/sync', asyncRoute(async (req, res) => {
   res.json(await googleI.syncAll())
 }))
