@@ -15,7 +15,7 @@ function systemPrompt() {
     `Right now it is ${now.toString()} (local time). Today is ${localDateStr()}.`,
     '',
     'You can manage EVERYTHING in the app via your tools — create, read, update, and delete across every area:',
-    '- Schedule/Calendar: schedule_event (set flagship=true for big overview events, plus location/notes/colour/project), update_event (edit any detail), reschedule_event (move time), find_free_slot, delete_event, clear_day.',
+    '- Schedule/Calendar: schedule_event (one-off; flagship=true for big overview events, plus location/notes/colour/project), schedule_recurring_event (repeating — every weekday/MWF/daily/weekly, give weekdays 0=Sun..6=Sat and 24h times), update_event (edit any detail), reschedule_event (move time), delete_event, delete_event_series (whole recurring series), find_free_slot, clear_day.',
     '- Tasks: create/update/complete/delete/list — including notes/description, recurrence, project, and priority (low/normal/high/urgent; urgent & high are pinned in the header).',
     '- Gym & Rehab: create/update/delete exercises (edit the standard — rep range, sets, increment), start/finish/delete workouts (list_workouts then delete_workout by id, date, or all:true), log_set (with an optional per-set note), build & edit routines (create/update/delete, add/remove exercises).',
     '- Notes: create_note, append_to_note, update_note (rename/replace), delete_note — a hierarchical notes workspace.',

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '../../db/index.js'
 import { newId, now, localDateStr } from '../helpers.js'
 import { firstFreeSlot, addMinutes, resolveProjectId } from './tools-shared.js'
+import { expandRecurrence } from '../recurrence.js'
 import { buildGymTools } from './tools-gym.js'
 import { buildNotesTools } from './tools-notes.js'
 import { buildRugbyTools } from './tools-rugby.js'
@@ -21,9 +22,9 @@ export function buildTools(record) {
     async ({ date }) => {
       const day = date || localDateStr()
       const events = await db
-        .prepare('SELECT id, title, start, "end", all_day FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
+        .prepare('SELECT id, title, start, "end", all_day, series_id FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
         .all(day)
-      // Include ids so the model can delete/move specific events.
+      // Include ids (and series_id for recurring) so the model can move/delete.
       return JSON.stringify({ date: day, events })
     },
     {
@@ -268,6 +269,70 @@ export function buildTools(record) {
     },
   )
 
+  const COLOR_ENUM = z.enum(['blue', 'violet', 'emerald', 'amber', 'rose', 'orange', 'teal', 'slate', 'red'])
+
+  const scheduleRecurringEvent = tool(
+    async ({ title, weekdays, frequency, start_time, end_time, duration_minutes, all_day, start_date, until_date, occurrences, location, notes, color, flagship, project }) => {
+      const occ = expandRecurrence({
+        frequency, weekdays, startDate: start_date, untilDate: until_date, occurrences,
+        allDay: !!all_day, startTime: start_time, endTime: end_time, durationMinutes: duration_minutes,
+      })
+      if (!occ.length) return JSON.stringify({ ok: false, message: 'That recurrence matched no dates.' })
+      const ts = now()
+      const seriesId = newId()
+      const projectId = await resolveProjectId(project)
+      for (const o of occ) {
+        await db
+          .prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,series_id,project_id,source,created_at,updated_at)
+            VALUES (@id,@title,@start,@end,@all_day,@location,@notes,@color,@flagship,@series_id,@pid,'assistant',@ts,@ts)`)
+          .run({
+            id: newId(), title, start: o.start, end: o.end, all_day: all_day ? 1 : 0,
+            location: location || '', notes: notes || '', color: color || 'blue',
+            flagship: flagship ? 1 : 0, series_id: seriesId, pid: projectId, ts,
+          })
+      }
+      record(`📅 Scheduled “${title}” — ${occ.length} occurrences`)
+      return JSON.stringify({ ok: true, series_id: seriesId, count: occ.length, first: occ[0].start, last: occ[occ.length - 1].start })
+    },
+    {
+      name: 'schedule_recurring_event',
+      description:
+        'Create a REPEATING event as many individual occurrences. Use this for "every weekday", "every Mon/Wed/Fri", "daily", "every Tuesday", etc. — NOT schedule_event. Specify weekdays for specific days (0=Sun,1=Mon,…,6=Sat): Mon–Fri = [1,2,3,4,5], MWF = [1,3,5], weekends = [0,6]; omit weekdays for every single day. Give start_time/end_time in 24h HH:mm (e.g. 4–5pm = "16:00"/"17:00"). Defaults: starts today, ~8-week horizon unless until_date or occurrences is given.',
+      schema: z.object({
+        title: z.string(),
+        weekdays: z.array(z.number().int().min(0).max(6)).optional().describe('0=Sun..6=Sat; omit for every day'),
+        frequency: z.enum(['daily', 'weekly']).optional(),
+        start_time: z.string().optional().describe('24h HH:mm, e.g. 16:00'),
+        end_time: z.string().optional().describe('24h HH:mm'),
+        duration_minutes: z.number().int().optional(),
+        all_day: z.boolean().optional(),
+        start_date: z.string().optional().describe('YYYY-MM-DD; defaults today'),
+        until_date: z.string().optional().describe('YYYY-MM-DD; last day, inclusive'),
+        occurrences: z.number().int().optional().describe('cap on number of occurrences'),
+        location: z.string().optional(),
+        notes: z.string().optional(),
+        color: COLOR_ENUM.optional(),
+        flagship: z.boolean().optional(),
+        project: z.string().optional(),
+      }),
+    },
+  )
+
+  const deleteEventSeries = tool(
+    async ({ series_id }) => {
+      const rows = await db.prepare('SELECT id FROM events WHERE series_id = ?').all(series_id)
+      if (!rows.length) return JSON.stringify({ ok: false, message: 'No events found for that series.' })
+      await db.prepare('DELETE FROM events WHERE series_id = ?').run(series_id)
+      record(`🗑️ Removed recurring series (${rows.length} events)`)
+      return JSON.stringify({ ok: true, deleted: rows.length })
+    },
+    {
+      name: 'delete_event_series',
+      description: 'Delete ALL occurrences of a recurring event by its series_id (get it from get_schedule). Use for "delete the recurring X / cancel the whole series".',
+      schema: z.object({ series_id: z.string() }),
+    },
+  )
+
   const clearDay = tool(
     async ({ date, include_all_day }) => {
       const day = date || localDateStr()
@@ -301,7 +366,7 @@ export function buildTools(record) {
 
   return [
     // Schedule / calendar
-    getSchedule, findFreeSlot, scheduleEvent, updateEvent, deleteEvent, clearDay, rescheduleEvent,
+    getSchedule, findFreeSlot, scheduleEvent, scheduleRecurringEvent, updateEvent, deleteEvent, deleteEventSeries, clearDay, rescheduleEvent,
     // Tasks
     createTask, updateTask, completeTask, deleteTask, setTaskPriority, listTasks,
     // Everything else, by domain

@@ -98,6 +98,8 @@ export async function initDb() {
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship INTEGER NOT NULL DEFAULT 1')
   // Per-set notes for the gym logger.
   await client.exec("ALTER TABLE gym_sets ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''")
+  // Recurring-event series grouping.
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS series_id TEXT')
   return client.label
 }
 

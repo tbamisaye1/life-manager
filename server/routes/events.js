@@ -2,9 +2,10 @@ import { Router } from 'express'
 import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
+import { expandRecurrence } from '../lib/recurrence.js'
 
 const router = Router()
-const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship']
+const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship', 'series_id']
 const BOOLS = ['all_day', 'flagship']
 
 // GET /api/events?from=ISO&to=ISO&flagship=1
@@ -46,6 +47,52 @@ router.post('/', async (req, res) => {
     project_id: req.body.project_id || null, ts,
   })
   res.status(201).json(decodeBooleans(await db.prepare('SELECT * FROM events WHERE id = ?').get(id), BOOLS))
+})
+
+// POST /api/events/recurring — create a repeating event as individual rows that
+// share a series_id. Body: { title, all_day, start_time, end_time,
+// duration_minutes, frequency, weekdays:[0-6], start_date, until_date,
+// occurrences, location, notes, color, flagship, project_id }
+router.post('/recurring', async (req, res) => {
+  const b = req.body || {}
+  if (!b.title?.trim()) return res.status(400).json(httpError('title is required', 'VALIDATION'))
+  const occurrences = expandRecurrence({
+    frequency: b.frequency,
+    weekdays: b.weekdays,
+    startDate: b.start_date,
+    untilDate: b.until_date,
+    occurrences: b.occurrences,
+    allDay: !!b.all_day,
+    startTime: b.start_time,
+    endTime: b.end_time,
+    durationMinutes: b.duration_minutes,
+  })
+  if (occurrences.length === 0) return res.status(400).json(httpError('Recurrence produced no dates', 'VALIDATION'))
+
+  const ts = now()
+  const seriesId = newId()
+  const shared = {
+    title: b.title.trim(),
+    all_day: b.all_day ? 1 : 0,
+    location: b.location || '',
+    notes: b.notes || '',
+    color: b.color || 'slate',
+    flagship: b.flagship === false || b.flagship === 0 ? 0 : 1,
+    project_id: b.project_id || null,
+  }
+  for (const occ of occurrences) {
+    await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,series_id,project_id,source,created_at,updated_at)
+      VALUES (@id,@title,@start,@end,@all_day,@location,@notes,@color,@flagship,@series_id,@project_id,'local',@ts,@ts)`).run({
+      id: newId(), ...shared, start: occ.start, end: occ.end, series_id: seriesId, ts,
+    })
+  }
+  res.status(201).json({ ok: true, series_id: seriesId, count: occurrences.length })
+})
+
+// DELETE /api/events/series/:seriesId — remove every occurrence in a series.
+router.delete('/series/:seriesId', async (req, res) => {
+  const r = await db.prepare('DELETE FROM events WHERE series_id = ?').run(req.params.seriesId)
+  res.json({ ok: true, deleted: r.changes ?? 0 })
 })
 
 router.patch('/:id', async (req, res) => {

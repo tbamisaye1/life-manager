@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS events (
   notes         TEXT,
   color         TEXT NOT NULL DEFAULT 'slate',
   flagship      INTEGER NOT NULL DEFAULT 1,       -- 1 = show on the month Calendar overview
+  series_id     TEXT,                            -- groups occurrences of a recurring event
   project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
   source        TEXT NOT NULL DEFAULT 'local',   -- local | google | notion | assistant
   external_id   TEXT,
