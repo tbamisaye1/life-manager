@@ -3,6 +3,7 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { expandRecurrence } from '../lib/recurrence.js'
+import * as googleI from '../integrations/google.js'
 
 const router = Router()
 const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship', 'series_id']
@@ -96,6 +97,16 @@ router.delete('/series/:seriesId', async (req, res) => {
 })
 
 router.patch('/:id', async (req, res) => {
+  const existing = await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
+  // For Google-synced events, push the edit to Google FIRST so the next sync
+  // doesn't revert it; only persist locally if Google accepted (or it's local).
+  if (existing?.source === 'google') {
+    try {
+      await googleI.pushUpdate(existing, req.body)
+    } catch (err) {
+      return res.status(502).json(httpError(`Couldn't update the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
+    }
+  }
   const patch = { ...req.body }
   if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
   if ('flagship' in patch) patch.flagship = patch.flagship ? 1 : 0
@@ -105,6 +116,14 @@ router.patch('/:id', async (req, res) => {
 })
 
 router.delete('/:id', async (req, res) => {
+  const existing = await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
+  if (existing?.source === 'google') {
+    try {
+      await googleI.pushDelete(existing)
+    } catch (err) {
+      return res.status(502).json(httpError(`Couldn't delete the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
+    }
+  }
   await db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })

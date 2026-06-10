@@ -309,6 +309,7 @@ CREATE TABLE IF NOT EXISTS google_calendars (
   color          TEXT,
   is_primary     INTEGER NOT NULL DEFAULT 0,
   access_role    TEXT,                            -- owner | writer | reader
+  timezone       TEXT,                            -- IANA tz for correct write-back
   selected       INTEGER NOT NULL DEFAULT 1,
   created_at     TEXT,
   updated_at     TEXT

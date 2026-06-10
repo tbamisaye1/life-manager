@@ -134,12 +134,12 @@ export async function refreshCalendars(email) {
     const existing = await db.prepare('SELECT id FROM google_calendars WHERE id = ?').get(id)
     const summary = c.summaryOverride || c.summary || c.id
     if (existing) {
-      await db.prepare('UPDATE google_calendars SET summary=?, is_primary=?, access_role=?, updated_at=? WHERE id=?')
-        .run(summary, c.primary ? 1 : 0, c.accessRole || null, ts, id)
+      await db.prepare('UPDATE google_calendars SET summary=?, is_primary=?, access_role=?, timezone=?, updated_at=? WHERE id=?')
+        .run(summary, c.primary ? 1 : 0, c.accessRole || null, c.timeZone || null, ts, id)
     } else {
-      await db.prepare(`INSERT INTO google_calendars (id,account_email,calendar_id,summary,color,is_primary,access_role,selected,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,1,?,?)`)
-        .run(id, email, c.id, summary, paletteFor(c.id), c.primary ? 1 : 0, c.accessRole || null, ts, ts)
+      await db.prepare(`INSERT INTO google_calendars (id,account_email,calendar_id,summary,color,is_primary,access_role,timezone,selected,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,1,?,?)`)
+        .run(id, email, c.id, summary, paletteFor(c.id), c.primary ? 1 : 0, c.accessRole || null, c.timeZone || null, ts, ts)
     }
   }
 }
@@ -229,4 +229,87 @@ export async function syncAll() {
   const def = (await db.prepare('SELECT email FROM google_accounts WHERE is_default = 1').get()) || accounts[0]
   const gmail = def ? await syncGmail(def.email).catch(() => 0) : 0
   return { connected: true, calendar, gmail }
+}
+
+// ─── Write-back (local → Google) ──────────────────────────────────────────────
+
+export async function defaultTarget() {
+  const def = (await db.prepare('SELECT email FROM google_accounts WHERE is_default = 1').get()) ||
+    (await db.prepare('SELECT email FROM google_accounts ORDER BY connected_at LIMIT 1').get())
+  if (!def) return null
+  const cal =
+    (await db.prepare('SELECT calendar_id FROM google_calendars WHERE account_email=? AND is_primary=1').get(def.email)) ||
+    (await db.prepare('SELECT calendar_id FROM google_calendars WHERE account_email=? LIMIT 1').get(def.email))
+  return cal ? { email: def.email, calendarId: cal.calendar_id } : null
+}
+
+function timeParts(start, end, allDay, tz) {
+  if (allDay) return { start: { date: String(start).slice(0, 10) }, end: { date: String(end || start).slice(0, 10) } }
+  return {
+    start: { dateTime: start, timeZone: tz || undefined },
+    end: { dateTime: end || start, timeZone: tz || undefined },
+  }
+}
+
+async function calTz(email, calendarId) {
+  return (await db.prepare('SELECT timezone FROM google_calendars WHERE account_email=? AND calendar_id=?').get(email, calendarId))?.timezone || null
+}
+async function calColor(email, calendarId) {
+  return (await db.prepare('SELECT color FROM google_calendars WHERE account_email=? AND calendar_id=?').get(email, calendarId))?.color || 'blue'
+}
+
+// Create on Google AND mirror into local events; returns the local event row.
+export async function createEvent({ email, calendarId, title, start, end, allDay, location, notes, flagship }) {
+  const auth = await authedClientFor(email)
+  if (!auth) throw new Error('That Google account is not connected.')
+  const cal = google.calendar({ version: 'v3', auth })
+  const tz = await calTz(email, calendarId)
+  const { start: gStart, end: gEnd } = timeParts(start, end, allDay, tz)
+  const res = await cal.events.insert({
+    calendarId,
+    requestBody: { summary: title, location: location || '', description: notes || '', start: gStart, end: gEnd },
+  })
+  const g = res.data
+  const ts = now()
+  const id = newId()
+  await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,external_id,google_account,google_calendar_id,created_at,updated_at)
+    VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,@flagship,'google',@ext,@email,@cal,@ts,@ts)`).run({
+    id, title, start, end: end || start, allDay: allDay ? 1 : 0, location: location || '', notes: notes || '',
+    color: await calColor(email, calendarId), flagship: flagship === false ? 0 : 1, ext: g.id, email, cal: calendarId, ts,
+  })
+  return db.prepare('SELECT * FROM events WHERE id = ?').get(id)
+}
+
+// Push a local edit of a google-sourced event back to Google. Returns true if pushed.
+export async function pushUpdate(event, patch) {
+  if (event.source !== 'google' || !event.google_account || !event.external_id) return false
+  const auth = await authedClientFor(event.google_account)
+  if (!auth) return false
+  const cal = google.calendar({ version: 'v3', auth })
+  const tz = await calTz(event.google_account, event.google_calendar_id)
+  const body = {}
+  if (patch.title !== undefined) body.summary = patch.title
+  if (patch.location !== undefined) body.location = patch.location
+  if (patch.notes !== undefined) body.description = patch.notes
+  if (patch.start !== undefined || patch.end !== undefined || patch.all_day !== undefined) {
+    const allDay = (patch.all_day ?? event.all_day) ? true : false
+    const parts = timeParts(patch.start ?? event.start, patch.end ?? event.end, allDay, tz)
+    body.start = parts.start
+    body.end = parts.end
+  }
+  await cal.events.patch({ calendarId: event.google_calendar_id, eventId: event.external_id, requestBody: body })
+  return true
+}
+
+export async function pushDelete(event) {
+  if (event.source !== 'google' || !event.google_account || !event.external_id) return false
+  const auth = await authedClientFor(event.google_account)
+  if (!auth) return false
+  const cal = google.calendar({ version: 'v3', auth })
+  try {
+    await cal.events.delete({ calendarId: event.google_calendar_id, eventId: event.external_id })
+  } catch (e) {
+    if (e.code !== 404 && e.code !== 410) throw e // already gone is fine
+  }
+  return true
 }

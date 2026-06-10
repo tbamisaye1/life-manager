@@ -60,6 +60,24 @@ router.patch('/google/accounts/:email', asyncRoute(async (req, res) => {
   res.json({ ok: true })
 }))
 
+// Create an event directly on a Google calendar (and mirror it locally).
+router.post('/google/events', asyncRoute(async (req, res) => {
+  const b = req.body || {}
+  if (!b.title?.trim() || !b.start) return res.status(400).json(httpError('title and start are required', 'VALIDATION'))
+  let { email, calendar_id: calendarId } = b
+  if (!email || !calendarId) {
+    const t = await googleI.defaultTarget()
+    if (!t) return res.status(400).json(httpError('No Google calendar connected.', 'NOT_CONNECTED'))
+    email = email || t.email
+    calendarId = calendarId || t.calendarId
+  }
+  const event = await googleI.createEvent({
+    email, calendarId, title: b.title.trim(), start: b.start, end: b.end,
+    allDay: !!b.all_day, location: b.location, notes: b.notes, flagship: b.flagship,
+  })
+  res.status(201).json(event)
+}))
+
 router.post('/google/sync', asyncRoute(async (req, res) => {
   res.json(await googleI.syncAll())
 }))
