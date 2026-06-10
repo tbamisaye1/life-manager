@@ -100,6 +100,9 @@ export async function initDb() {
   await client.exec("ALTER TABLE gym_sets ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''")
   // Recurring-event series grouping.
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS series_id TEXT')
+  // Which Google account/calendar a synced event belongs to (for write-back).
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_account TEXT')
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_calendar_id TEXT')
   return client.label
 }
 

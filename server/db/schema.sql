@@ -287,6 +287,34 @@ CREATE TABLE IF NOT EXISTS bored_items (
   updated_at    TEXT NOT NULL
 );
 
+-- Connected Google accounts (multiple). Each holds its own OAuth tokens.
+CREATE TABLE IF NOT EXISTS google_accounts (
+  email          TEXT PRIMARY KEY,
+  label          TEXT,                            -- friendly label (work/school/personal)
+  access_token   TEXT,
+  refresh_token  TEXT,
+  expiry         TEXT,
+  scope          TEXT,
+  is_default     INTEGER NOT NULL DEFAULT 0,      -- where new events go unless told otherwise
+  connected_at   TEXT,
+  last_synced_at TEXT
+);
+
+-- Calendars discovered under each account; `selected` toggles sync/visibility.
+CREATE TABLE IF NOT EXISTS google_calendars (
+  id             TEXT PRIMARY KEY,                -- `${email}::${calendar_id}`
+  account_email  TEXT NOT NULL REFERENCES google_accounts(email) ON DELETE CASCADE,
+  calendar_id    TEXT NOT NULL,
+  summary        TEXT,
+  color          TEXT,
+  is_primary     INTEGER NOT NULL DEFAULT 0,
+  access_role    TEXT,                            -- owner | writer | reader
+  selected       INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT,
+  updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_google_calendars_account ON google_calendars(account_email);
+
 -- Pinboard: quick-capture sticky notes for fleeting thoughts/ideas/reminders.
 -- Deliberately frictionless — type and go, delete when done. Mobile-first.
 CREATE TABLE IF NOT EXISTS pins (

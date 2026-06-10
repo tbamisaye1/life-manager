@@ -1,142 +1,203 @@
-// Google integration (Calendar + Gmail). Real OAuth, but everything degrades
-// gracefully: if credentials/tokens are missing, isConfigured()/isConnected()
-// return false and the app keeps running on local data. 100% local storage.
+// Google integration (Calendar + Gmail) — MULTI-ACCOUNT.
+// Each connected Google account stores its own OAuth tokens in google_accounts;
+// its calendars are discovered into google_calendars; selected calendars are
+// mirrored into the shared `events` table (source='google') so they show up in
+// the daily schedule + month calendar on both web and mobile. Degrades
+// gracefully: with no credentials/accounts, everything returns empty.
 import { google } from 'googleapis'
 import { db } from '../db/index.js'
 import { newId, now } from '../lib/helpers.js'
 
+// Full calendar scope so we can list every calendar and (later) write to them.
 const SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
 ]
+
+const PALETTE = ['blue', 'violet', 'emerald', 'amber', 'rose', 'orange', 'teal', 'red', 'slate']
+function paletteFor(key) {
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return PALETTE[h % PALETTE.length]
+}
 
 export function isConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 }
 
-function oauthClient() {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI || 'http://localhost:4000/api/integrations/google/callback',
-  )
+function oauthClient(redirectUri) {
+  return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, redirectUri)
 }
 
-async function storedAccount() {
-  return db.prepare("SELECT * FROM integration_accounts WHERE provider = 'google'").get()
-}
+// ─── Accounts ──────────────────────────────────────────────────────────────────
 
-export async function isConnected() {
-  const a = await storedAccount()
-  return Boolean(a && a.access_token)
+export async function listAccounts() {
+  const rows = await db.prepare('SELECT email, label, is_default, connected_at, last_synced_at FROM google_accounts ORDER BY connected_at').all()
+  return rows.map((r) => ({ email: r.email, label: r.label, is_default: !!r.is_default, connected_at: r.connected_at, last_synced_at: r.last_synced_at }))
 }
 
 export async function status() {
-  const a = await storedAccount()
-  return {
-    provider: 'google',
-    configured: isConfigured(),
-    connected: Boolean(a && a.access_token),
-    account: a?.account_label || null,
-    lastSyncedAt: a?.last_synced_at || null,
-  }
+  const accounts = await listAccounts()
+  return { provider: 'google', configured: isConfigured(), connected: accounts.length > 0, accounts }
 }
 
-/** Build the consent URL the user visits to connect their account. */
-export function getAuthUrl() {
+export function getAuthUrl(redirectUri) {
   if (!isConfigured()) return null
-  return oauthClient().generateAuthUrl({
+  return oauthClient(redirectUri).generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'consent select_account', // lets the user pick WHICH account, and forces a refresh_token
     scope: SCOPES,
+    include_granted_scopes: true,
   })
 }
 
-/** Exchange the OAuth code for tokens and persist them locally. */
-export async function handleCallback(code) {
-  const client = oauthClient()
+export async function handleCallback(code, redirectUri) {
+  const client = oauthClient(redirectUri)
   const { tokens } = await client.getToken(code)
   client.setCredentials(tokens)
-  let email = 'google account'
+
+  let email = null
   try {
     const oauth2 = google.oauth2({ version: 'v2', auth: client })
-    const me = await oauth2.userinfo.get()
-    email = me.data.email || email
-  } catch { /* non-fatal */ }
+    email = (await oauth2.userinfo.get()).data.email
+  } catch { /* ignore */ }
+  if (!email) throw new Error('Could not read the Google account email.')
+
+  const existing = await db.prepare('SELECT email FROM google_accounts WHERE email = ?').get(email)
+  const anyDefault = await db.prepare('SELECT email FROM google_accounts WHERE is_default = 1').get()
   const ts = now()
-  await db.prepare(`INSERT INTO integration_accounts (provider,account_label,access_token,refresh_token,expiry,scope,raw,connected_at)
-    VALUES ('google',@label,@access,@refresh,@expiry,@scope,@raw,@ts)
-    ON CONFLICT(provider) DO UPDATE SET account_label=@label, access_token=@access,
-      refresh_token=COALESCE(@refresh, refresh_token), expiry=@expiry, scope=@scope, raw=@raw, connected_at=@ts`).run({
+  await db.prepare(`INSERT INTO google_accounts (email,label,access_token,refresh_token,expiry,scope,is_default,connected_at,last_synced_at)
+    VALUES (@email,@label,@access,@refresh,@expiry,@scope,@isDefault,@ts,NULL)
+    ON CONFLICT(email) DO UPDATE SET access_token=@access, refresh_token=COALESCE(@refresh, google_accounts.refresh_token), expiry=@expiry, scope=@scope, connected_at=@ts`).run({
+    email,
     label: email,
     access: tokens.access_token,
     refresh: tokens.refresh_token || null,
     expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
-    scope: (tokens.scope || SCOPES.join(' ')),
-    raw: JSON.stringify(tokens),
+    scope: tokens.scope || SCOPES.join(' '),
+    isDefault: !existing && !anyDefault ? 1 : 0,
     ts,
   })
+  await refreshCalendars(email).catch(() => {})
   return { email }
 }
 
-export async function disconnect() {
-  await db.prepare("DELETE FROM integration_accounts WHERE provider = 'google'").run()
+export async function setDefaultAccount(email) {
+  await db.prepare('UPDATE google_accounts SET is_default = 0').run()
+  await db.prepare('UPDATE google_accounts SET is_default = 1 WHERE email = ?').run(email)
 }
 
-async function authedClient() {
-  const a = await storedAccount()
-  if (!a?.access_token) return null
+export async function setLabel(email, label) {
+  await db.prepare('UPDATE google_accounts SET label = ? WHERE email = ?').run(label, email)
+}
+
+export async function disconnect(email) {
+  await db.prepare('DELETE FROM google_accounts WHERE email = ?').run(email) // cascades google_calendars
+  await db.prepare("DELETE FROM events WHERE source = 'google' AND google_account = ?").run(email)
+  const def = await db.prepare('SELECT email FROM google_accounts WHERE is_default = 1').get()
+  if (!def) {
+    const any = await db.prepare('SELECT email FROM google_accounts ORDER BY connected_at LIMIT 1').get()
+    if (any) await db.prepare('UPDATE google_accounts SET is_default = 1 WHERE email = ?').run(any.email)
+  }
+}
+
+async function authedClientFor(email) {
+  const a = await db.prepare('SELECT * FROM google_accounts WHERE email = ?').get(email)
+  if (!a || (!a.access_token && !a.refresh_token)) return null
   const client = oauthClient()
   client.setCredentials({
     access_token: a.access_token,
     refresh_token: a.refresh_token,
     expiry_date: a.expiry ? new Date(a.expiry).getTime() : undefined,
+    scope: a.scope,
+  })
+  // Persist tokens the library refreshes for us.
+  client.on('tokens', (t) => {
+    db.prepare('UPDATE google_accounts SET access_token = COALESCE(?, access_token), refresh_token = COALESCE(?, refresh_token), expiry = ? WHERE email = ?')
+      .run(t.access_token || null, t.refresh_token || null, t.expiry_date ? new Date(t.expiry_date).toISOString() : a.expiry, email)
+      .catch(() => {})
   })
   return client
 }
 
-/** Pull upcoming Google Calendar events into the local events table. */
-export async function syncCalendar() {
-  const auth = await authedClient()
-  if (!auth) return { synced: 0 }
+// ─── Calendars ──────────────────────────────────────────────────────────────────
+
+export async function refreshCalendars(email) {
+  const auth = await authedClientFor(email)
+  if (!auth) return
   const cal = google.calendar({ version: 'v3', auth })
-  const res = await cal.events.list({
-    calendarId: 'primary',
-    timeMin: new Date(Date.now() - 14 * 864e5).toISOString(),
-    timeMax: new Date(Date.now() + 60 * 864e5).toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-    maxResults: 250,
-  })
+  const res = await cal.calendarList.list({ maxResults: 250 })
   const ts = now()
-  const upsert = db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,source,external_id,created_at,updated_at)
-    VALUES (@id,@title,@start,@end,@all_day,@location,@notes,'blue','google',@ext,@ts,@ts)
-    ON CONFLICT(id) DO NOTHING`)
-  let n = 0
-  for (const e of res.data.items || []) {
-    const exists = await db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
-    const start = e.start?.dateTime || e.start?.date
-    if (!start) continue
-    if (exists) {
-      await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@all_day, location=@location, updated_at=@ts WHERE id=@id`).run({
-        id: exists.id, title: e.summary || '(no title)', start, end: e.end?.dateTime || e.end?.date || start,
-        all_day: e.start?.date ? 1 : 0, location: e.location || '', ts,
-      })
+  for (const c of res.data.items || []) {
+    const id = `${email}::${c.id}`
+    const existing = await db.prepare('SELECT id FROM google_calendars WHERE id = ?').get(id)
+    const summary = c.summaryOverride || c.summary || c.id
+    if (existing) {
+      await db.prepare('UPDATE google_calendars SET summary=?, is_primary=?, access_role=?, updated_at=? WHERE id=?')
+        .run(summary, c.primary ? 1 : 0, c.accessRole || null, ts, id)
     } else {
-      await upsert.run({ id: newId(), title: e.summary || '(no title)', start, end: e.end?.dateTime || e.end?.date || start,
-        all_day: e.start?.date ? 1 : 0, location: e.location || '', notes: e.description || '', ext: e.id, ts })
+      await db.prepare(`INSERT INTO google_calendars (id,account_email,calendar_id,summary,color,is_primary,access_role,selected,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,1,?,?)`)
+        .run(id, email, c.id, summary, paletteFor(c.id), c.primary ? 1 : 0, c.accessRole || null, ts, ts)
     }
-    n++
   }
-  await markSynced()
-  return { synced: n }
 }
 
-/** Pull recent Gmail messages into the local emails table. */
-export async function syncGmail() {
-  const auth = await authedClient()
-  if (!auth) return { synced: 0 }
+export async function listCalendars() {
+  const rows = await db.prepare('SELECT * FROM google_calendars ORDER BY account_email, is_primary DESC, summary').all()
+  return rows.map((c) => ({ ...c, is_primary: !!c.is_primary, selected: !!c.selected }))
+}
+
+export async function setCalendarSelected(id, selected) {
+  await db.prepare('UPDATE google_calendars SET selected = ?, updated_at = ? WHERE id = ?').run(selected ? 1 : 0, now(), id)
+  if (!selected) {
+    const row = await db.prepare('SELECT account_email, calendar_id FROM google_calendars WHERE id = ?').get(id)
+    if (row) await db.prepare("DELETE FROM events WHERE source='google' AND google_account=? AND google_calendar_id=?").run(row.account_email, row.calendar_id)
+  }
+}
+
+// ─── Sync (read Google → local events) ────────────────────────────────────────
+
+async function syncAccountCalendars(email) {
+  const auth = await authedClientFor(email)
+  if (!auth) return 0
+  const cal = google.calendar({ version: 'v3', auth })
+  const calendars = await db.prepare('SELECT calendar_id, color FROM google_calendars WHERE account_email = ? AND selected = 1').all(email)
+  const timeMin = new Date(Date.now() - 14 * 864e5).toISOString()
+  const timeMax = new Date(Date.now() + 120 * 864e5).toISOString()
+  let n = 0
+  for (const c of calendars) {
+    let res
+    try {
+      res = await cal.events.list({ calendarId: c.calendar_id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', maxResults: 250 })
+    } catch { continue }
+    const ts = now()
+    for (const e of res.data.items || []) {
+      if (e.status === 'cancelled') continue
+      const start = e.start?.dateTime || e.start?.date
+      if (!start) continue
+      const end = e.end?.dateTime || e.end?.date || start
+      const allDay = e.start?.date ? 1 : 0
+      const existing = await db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
+      if (existing) {
+        await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
+          .run({ id: existing.id, title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', email, cal: c.calendar_id, ts })
+      } else {
+        await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,external_id,google_account,google_calendar_id,created_at,updated_at)
+          VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,1,'google',@ext,@email,@cal,@ts,@ts)`)
+          .run({ id: newId(), title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', ext: e.id, email, cal: c.calendar_id, ts })
+      }
+      n++
+    }
+  }
+  await db.prepare('UPDATE google_accounts SET last_synced_at = ? WHERE email = ?').run(now(), email)
+  return n
+}
+
+async function syncGmail(email) {
+  const auth = await authedClientFor(email)
+  if (!auth) return 0
   const gmail = google.gmail({ version: 'v1', auth })
   const list = await gmail.users.messages.list({ userId: 'me', maxResults: 20, q: 'in:inbox' })
   const ts = now()
@@ -146,26 +207,26 @@ export async function syncGmail() {
     const msg = await gmail.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] })
     const headers = Object.fromEntries((msg.data.payload?.headers || []).map((h) => [h.name, h.value]))
     const from = headers.From || ''
-    const fromName = from.replace(/<.*>/, '').trim().replace(/"/g, '') || from
-    const fromEmail = (from.match(/<(.+)>/)?.[1]) || from
     await db.prepare(`INSERT INTO emails (id,from_name,from_email,subject,snippet,body,received_at,is_read,pinned,needs_reply,source,external_id,created_at,updated_at)
       VALUES (@id,@fn,@fe,@sub,@snip,@snip,@recv,@read,0,0,'google',@ext,@ts,@ts)`).run({
-      id: newId(), fn: fromName, fe: fromEmail, sub: headers.Subject || '(no subject)',
-      snip: msg.data.snippet || '', recv: headers.Date ? new Date(headers.Date).toISOString() : ts,
+      id: newId(), fn: from.replace(/<.*>/, '').trim().replace(/"/g, '') || from, fe: from.match(/<(.+)>/)?.[1] || from,
+      sub: headers.Subject || '(no subject)', snip: msg.data.snippet || '', recv: headers.Date ? new Date(headers.Date).toISOString() : ts,
       read: (msg.data.labelIds || []).includes('UNREAD') ? 0 : 1, ext: m.id, ts,
     })
     n++
   }
-  await markSynced()
-  return { synced: n }
-}
-
-async function markSynced() {
-  await db.prepare("UPDATE integration_accounts SET last_synced_at=? WHERE provider='google'").run(now())
+  return n
 }
 
 export async function syncAll() {
-  if (!await isConnected()) return { calendar: 0, gmail: 0, connected: false }
-  const [calendar, gmail] = await Promise.all([syncCalendar(), syncGmail()])
-  return { calendar: calendar.synced, gmail: gmail.synced, connected: true }
+  const accounts = await db.prepare('SELECT email FROM google_accounts').all()
+  if (!accounts.length) return { connected: false, calendar: 0, gmail: 0 }
+  let calendar = 0
+  for (const { email } of accounts) {
+    await refreshCalendars(email).catch(() => {})
+    calendar += await syncAccountCalendars(email).catch(() => 0)
+  }
+  const def = (await db.prepare('SELECT email FROM google_accounts WHERE is_default = 1').get()) || accounts[0]
+  const gmail = def ? await syncGmail(def.email).catch(() => 0) : 0
+  return { connected: true, calendar, gmail }
 }

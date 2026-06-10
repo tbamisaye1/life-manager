@@ -4,32 +4,68 @@ import * as notionI from '../integrations/notion.js'
 import { asyncRoute, httpError } from '../lib/http.js'
 
 const router = Router()
-const FRONTEND = 'http://localhost:5180/settings'
+
+// Build absolute URLs from the incoming request so OAuth works on whatever host
+// is serving us (localhost in dev, the Vercel domain in prod) — no hardcoding.
+function baseUrl(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https'
+  const host = req.headers['x-forwarded-host'] || req.get('host')
+  return `${proto}://${host}`
+}
+const redirectUriFor = (req) => `${baseUrl(req)}/api/integrations/google/callback`
 
 router.get('/status', asyncRoute(async (req, res) => {
   res.json({ google: await googleI.status(), notion: await notionI.status() })
 }))
 
-// --- Google ---
+// --- Google (multi-account) ---
 router.get('/google/connect', (req, res) => {
-  const url = googleI.getAuthUrl()
+  const url = googleI.getAuthUrl(redirectUriFor(req))
   if (!url) return res.status(400).json(httpError('Google is not configured. Add GOOGLE_CLIENT_ID/SECRET to .env', 'NOT_CONFIGURED'))
   res.redirect(url)
 })
 
 router.get('/google/callback', asyncRoute(async (req, res) => {
-  if (!req.query.code) return res.redirect(`${FRONTEND}?error=google`)
-  await googleI.handleCallback(req.query.code)
-  await googleI.syncAll().catch(() => {})
-  res.redirect(`${FRONTEND}?connected=google`)
+  const settings = `${baseUrl(req)}/settings`
+  if (!req.query.code) return res.redirect(`${settings}?error=google`)
+  try {
+    await googleI.handleCallback(req.query.code, redirectUriFor(req))
+    await googleI.syncAll().catch(() => {})
+    res.redirect(`${settings}?connected=google`)
+  } catch (err) {
+    res.redirect(`${settings}?error=${encodeURIComponent(err.message || 'google')}`)
+  }
+}))
+
+router.get('/google/accounts', asyncRoute(async (req, res) => {
+  res.json(await googleI.listAccounts())
+}))
+
+router.get('/google/calendars', asyncRoute(async (req, res) => {
+  res.json(await googleI.listCalendars())
+}))
+
+router.post('/google/calendars/:id/selected', asyncRoute(async (req, res) => {
+  await googleI.setCalendarSelected(req.params.id, req.body.selected !== false)
+  res.json({ ok: true })
+}))
+
+router.post('/google/accounts/:email/default', asyncRoute(async (req, res) => {
+  await googleI.setDefaultAccount(req.params.email)
+  res.json({ ok: true })
+}))
+
+router.patch('/google/accounts/:email', asyncRoute(async (req, res) => {
+  if (req.body.label) await googleI.setLabel(req.params.email, req.body.label)
+  res.json({ ok: true })
 }))
 
 router.post('/google/sync', asyncRoute(async (req, res) => {
   res.json(await googleI.syncAll())
 }))
 
-router.delete('/google', asyncRoute(async (req, res) => {
-  await googleI.disconnect()
+router.delete('/google/accounts/:email', asyncRoute(async (req, res) => {
+  await googleI.disconnect(req.params.email)
   res.json({ ok: true })
 }))
 
@@ -41,9 +77,10 @@ router.get('/notion/connect', (req, res) => {
 })
 
 router.get('/notion/callback', asyncRoute(async (req, res) => {
-  if (!req.query.code) return res.redirect(`${FRONTEND}?error=notion`)
+  const settings = `${baseUrl(req)}/settings`
+  if (!req.query.code) return res.redirect(`${settings}?error=notion`)
   await notionI.handleCallback(req.query.code)
-  res.redirect(`${FRONTEND}?connected=notion`)
+  res.redirect(`${settings}?connected=notion`)
 }))
 
 router.post('/notion/sync', asyncRoute(async (req, res) => {
