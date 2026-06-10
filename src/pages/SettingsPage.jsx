@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Settings, ShieldCheck, Info } from 'lucide-react'
 import { PageHeader, Button, Input, Label, Loading, ErrorState } from '../components/ui'
 import { IntegrationCard } from '../components/settings/IntegrationCard'
+import { GoogleAccountsCard } from '../components/settings/GoogleAccountsCard'
 import { useIntegrationStatus, useSyncProvider, useDisconnectProvider } from '../hooks/useIntegrations'
 
 export default function SettingsPage() {
@@ -33,15 +34,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4">
-        <IntegrationCard
-          provider="google"
-          status={data.google}
-          syncing={sync.isPending}
-          onSync={() => sync.mutate({ provider: 'google' })}
-          onDisconnect={() => disconnect.mutate('google')}
-        >
-          {!data.google.configured && <SetupHint provider="Google" />}
-        </IntegrationCard>
+        <GoogleAccountsCard configured={data.google.configured} />
 
         <IntegrationCard
           provider="notion"
