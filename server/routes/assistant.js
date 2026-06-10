@@ -1,13 +1,33 @@
 import { Router } from 'express'
+import multer from 'multer'
+import OpenAI, { toFile } from 'openai'
 import { db } from '../db/index.js'
 import { newId, now } from '../lib/helpers.js'
 import { runAssistant, assistantConfigured } from '../lib/assistant/index.js'
 import { httpError } from '../lib/http.js'
 
 const router = Router()
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } })
 
 router.get('/status', (req, res) => {
   res.json({ configured: assistantConfigured() })
+})
+
+// POST /api/assistant/transcribe — multipart "audio" file → text (OpenAI Whisper).
+router.post('/transcribe', upload.single('audio'), async (req, res) => {
+  if (!assistantConfigured()) return res.status(400).json(httpError('Transcription needs an OpenAI key.', 'NOT_CONFIGURED'))
+  if (!req.file?.buffer?.length) return res.status(400).json(httpError('No audio uploaded.', 'VALIDATION'))
+  try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    const file = await toFile(req.file.buffer, req.file.originalname || 'audio.m4a', { type: req.file.mimetype || 'audio/m4a' })
+    const result = await openai.audio.transcriptions.create({
+      file,
+      model: process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1',
+    })
+    res.json({ text: (result.text || '').trim() })
+  } catch (err) {
+    res.status(502).json(httpError(`Transcription failed: ${err.message}`, 'TRANSCRIBE_ERROR'))
+  }
 })
 
 // ---- Conversation history (ChatGPT-style) ----

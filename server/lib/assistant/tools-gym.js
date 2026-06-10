@@ -81,106 +81,118 @@ export function buildGymTools({ record }) {
   )
 
   // -------------------------------------------------------------------------
-  // log_set  (the key tool)
+  // Shared gym-logging helpers (used by log_set and log_sets)
+  // -------------------------------------------------------------------------
+
+  // Resolve an exercise by name with ranked matching: exact → prefix → closest
+  // (shortest) substring. Avoids "deadlift" grabbing a long unrelated name when
+  // a closer one exists.
+  async function findExercise(name) {
+    const n = name.trim()
+    return (
+      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 LIMIT 1').get(n)) ||
+      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 ORDER BY LENGTH(name) LIMIT 1').get(`${n}%`)) ||
+      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 ORDER BY LENGTH(name) LIMIT 1').get(`%${n}%`)) ||
+      null
+    )
+  }
+
+  async function ensureExercise(name) {
+    const found = await findExercise(name)
+    if (found) return { exercise: found, created: false }
+    const ts = now()
+    const id = newId()
+    await db
+      .prepare(`INSERT INTO gym_exercises (id, name, category, unit, muscle_group, rep_low, rep_high, default_sets, increment, notes, archived, created_at, updated_at)
+        VALUES (@id, @name, 'strength', 'kg', NULL, 8, 12, 3, 2.5, NULL, 0, @ts, @ts)`)
+      .run({ id, name: name.trim(), ts })
+    return { exercise: { id, name: name.trim(), unit: 'kg' }, created: true }
+  }
+
+  async function ensureTodayWorkout(day) {
+    const existing = await db.prepare('SELECT id FROM gym_workouts WHERE date = ? ORDER BY created_at DESC LIMIT 1').get(day)
+    if (existing) return existing
+    const ts = now()
+    const id = newId()
+    await db
+      .prepare(`INSERT INTO gym_workouts (id, date, routine_id, title, notes, completed, created_at, updated_at)
+        VALUES (@id, @date, NULL, 'Workout', '', 0, @ts, @ts)`)
+      .run({ id, date: day, ts })
+    return { id }
+  }
+
+  async function nextSetNumber(workoutId, exerciseId) {
+    const row = await db.prepare('SELECT MAX(set_number) AS max_set FROM gym_sets WHERE workout_id = ? AND exercise_id = ?').get(workoutId, exerciseId)
+    return Number(row?.max_set ?? 0) + 1
+  }
+
+  async function insertSet({ workoutId, exerciseId, setNumber, weight, reps, notes }) {
+    await db
+      .prepare(`INSERT INTO gym_sets (id, workout_id, exercise_id, set_number, weight, reps, rpe, done, notes, created_at)
+        VALUES (@id, @wid, @ex, @num, @weight, @reps, NULL, 1, @notes, @ts)`)
+      .run({ id: newId(), wid: workoutId, ex: exerciseId, num: setNumber, weight: weight ?? null, reps: reps ?? null, notes: notes || '', ts: now() })
+  }
+
+  // -------------------------------------------------------------------------
+  // log_set  (one set)
   // -------------------------------------------------------------------------
   const logSet = tool(
     async ({ exercise_name, weight, reps, date, notes }) => {
       const day = date || localDateStr()
+      const { exercise, created } = await ensureExercise(exercise_name)
+      if (created) record(`🆕 Added exercise "${exercise.name}"`)
+      const workout = await ensureTodayWorkout(day)
+      const setNumber = await nextSetNumber(workout.id, exercise.id)
+      await insertSet({ workoutId: workout.id, exerciseId: exercise.id, setNumber, weight, reps, notes })
 
-      // 1. Resolve exercise by name ILIKE
-      let exercise = await db
-        .prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 LIMIT 1')
-        .get(`%${exercise_name}%`)
-
-      let autoCreated = false
-      if (!exercise) {
-        const ts = now()
-        const exId = newId()
-        await db
-          .prepare(
-            `INSERT INTO gym_exercises
-               (id, name, category, unit, muscle_group, rep_low, rep_high, default_sets, increment, notes, archived, created_at, updated_at)
-             VALUES
-               (@id, @name, 'strength', 'kg', NULL, 8, 12, 3, 2.5, NULL, 0, @ts, @ts)`,
-          )
-          .run({ id: exId, name: exercise_name, ts })
-        record(`🆕 Added exercise "${exercise_name}"`)
-        exercise = { id: exId, name: exercise_name, unit: 'kg' }
-        autoCreated = true
-      }
-
-      // 2. Find or create workout for the date
-      let workout = await db
-        .prepare('SELECT id FROM gym_workouts WHERE date = ? ORDER BY created_at DESC LIMIT 1')
-        .get(day)
-
-      if (!workout) {
-        const ts = now()
-        const wId = newId()
-        await db
-          .prepare(
-            `INSERT INTO gym_workouts (id, date, routine_id, title, notes, completed, created_at, updated_at)
-             VALUES (@id, @date, NULL, 'Workout', '', 0, @ts, @ts)`,
-          )
-          .run({ id: wId, date: day, ts })
-        workout = { id: wId }
-      }
-
-      // 3. Determine next set_number
-      const maxRow = await db
-        .prepare(
-          'SELECT MAX(set_number) AS max_set FROM gym_sets WHERE workout_id = ? AND exercise_id = ?',
-        )
-        .get(workout.id, exercise.id)
-      const setNumber = Number(maxRow?.max_set ?? 0) + 1
-
-      // 4. Insert the set
-      const setId = newId()
-      const setTs = now()
-      await db
-        .prepare(
-          `INSERT INTO gym_sets (id, workout_id, exercise_id, set_number, weight, reps, rpe, done, notes, created_at)
-           VALUES (@id, @workout_id, @exercise_id, @set_number, @weight, @reps, NULL, 1, @notes, @ts)`,
-        )
-        .run({
-          id: setId,
-          workout_id: workout.id,
-          exercise_id: exercise.id,
-          set_number: setNumber,
-          weight: weight ?? null,
-          reps: reps ?? null,
-          notes: notes || '',
-          ts: setTs,
-        })
-
-      const label =
-        weight != null && reps != null
-          ? `${weight}${exercise.unit} × ${reps}`
-          : weight != null
-            ? `${weight}${exercise.unit}`
-            : reps != null
-              ? `${reps} reps`
-              : 'set'
+      const label = weight != null && reps != null ? `${weight}${exercise.unit} × ${reps}` : weight != null ? `${weight}${exercise.unit}` : reps != null ? `${reps} reps` : 'set'
       record(`🏋️ Logged ${exercise.name} — ${label}`)
-
-      return JSON.stringify({
-        ok: true,
-        workout_id: workout.id,
-        exercise: exercise.name,
-        set_number: setNumber,
-        auto_created_exercise: autoCreated,
-      })
+      return JSON.stringify({ ok: true, workout_id: workout.id, exercise: exercise.name, set_number: setNumber, auto_created_exercise: created })
     },
     {
       name: 'log_set',
       description:
-        "Log a single set for an exercise. Resolves the exercise by name (creates it if missing), finds or creates today's workout, and appends the set.",
+        "Log a SINGLE set for an exercise. If the user gives a set COUNT (e.g. '3 sets of 10'), use log_sets instead. Resolves the exercise by name (creates it if missing), finds or creates today's workout, and appends one set.",
       schema: z.object({
         exercise_name: z.string().describe('Full or partial exercise name'),
         weight: z.number().optional().describe('Weight used (unit matches exercise)'),
         reps: z.number().int().optional(),
         date: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
-        notes: z.string().optional().describe('a note for this set, e.g. "felt heavy", "left knee twinge"'),
+        notes: z.string().optional().describe('a note for this set, e.g. "felt heavy"'),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // log_sets  (MANY identical sets in ONE call — exact count, no looping)
+  // -------------------------------------------------------------------------
+  const logSets = tool(
+    async ({ exercise_name, sets, reps, weight, date, notes }) => {
+      const count = Math.max(1, Math.min(20, Math.round(Number(sets))))
+      const day = date || localDateStr()
+      const { exercise, created } = await ensureExercise(exercise_name)
+      if (created) record(`🆕 Added exercise "${exercise.name}"`)
+      const workout = await ensureTodayWorkout(day)
+      let setNumber = await nextSetNumber(workout.id, exercise.id)
+      for (let i = 0; i < count; i++) {
+        await insertSet({ workoutId: workout.id, exerciseId: exercise.id, setNumber, weight, reps, notes })
+        setNumber++
+      }
+      const per = weight != null && reps != null ? `${weight}${exercise.unit} × ${reps}` : reps != null ? `${reps} reps` : weight != null ? `${weight}${exercise.unit}` : ''
+      record(`🏋️ Logged ${exercise.name} — ${count} sets${per ? ` of ${per}` : ''}`)
+      return JSON.stringify({ ok: true, exercise: exercise.name, sets: count, reps: reps ?? null, weight: weight ?? null, auto_created_exercise: created })
+    },
+    {
+      name: 'log_sets',
+      description:
+        "ALWAYS use this (NOT repeated log_set calls) when the user states a number of sets — e.g. '3 sets of 10', '5x5 at 100kg', 'leg press 4 sets of 12'. Creates EXACTLY `sets` identical sets in one call — never more, never fewer. Resolves/creates the exercise and today's workout automatically.",
+      schema: z.object({
+        exercise_name: z.string().describe('Full or partial exercise name'),
+        sets: z.number().int().min(1).max(20).describe('EXACT number of sets to create'),
+        reps: z.number().int().optional().describe('reps per set'),
+        weight: z.number().optional().describe('weight per set (unit matches exercise)'),
+        date: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+        notes: z.string().optional(),
       }),
     },
   )
@@ -614,6 +626,7 @@ export function buildGymTools({ record }) {
     listExercises,
     createExercise,
     logSet,
+    logSets,
     getGymToday,
     listRoutines,
     createRoutine,
