@@ -20,7 +20,7 @@ import { WeekTimeline } from '../components/schedule/WeekTimeline'
 import { EventModal } from '../components/calendar/EventModal'
 import { EventChip } from '../components/calendar/EventChip'
 import { events as eventsResource } from '../hooks/resources'
-import { useGoogleAccounts, useGoogleCalendarActions } from '../hooks/useIntegrations'
+import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync } from '../hooks/useIntegrations'
 import { toISOLocal } from '../components/schedule/timeline'
 import { cn } from '../lib/cn'
 
@@ -66,6 +66,7 @@ export default function DailySchedulePage() {
   const [accountFilter, setAccountFilter] = useState('all')
   const { data: gAccounts = [] } = useGoogleAccounts()
   const { sync } = useGoogleCalendarActions()
+  useGoogleAutoSync(gAccounts.length > 0, sync)
 
   // --- Date range for API query ---
   const weekStart = startOfWeek(anchorDate, { weekStartsOn: 1 })

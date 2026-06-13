@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -56,4 +57,36 @@ export function useGoogleCalendarActions() {
     onSuccess: () => refreshGoogle(client),
   })
   return { toggleCalendar, setDefault, disconnectAccount, sync }
+}
+
+// Quietly pull the latest Google events when a calendar view mounts or the
+// window regains focus — throttled so we don't hammer the API. Pass the page's
+// own `sync` mutation so its button spinner reflects auto-syncs too.
+// Module-level timestamp shared across pages so navigating between Schedule and
+// Calendar doesn't re-sync within the throttle window.
+const AUTO_SYNC_THROTTLE_MS = 2 * 60 * 1000
+let lastAutoSyncAt = 0
+
+export function useGoogleAutoSync(enabled, syncMutation) {
+  const syncRef = useRef(syncMutation)
+  useEffect(() => {
+    syncRef.current = syncMutation
+  })
+  useEffect(() => {
+    if (!enabled) return
+    const maybeSync = () => {
+      if (document.visibilityState === 'hidden') return
+      if (syncRef.current.isPending) return
+      if (Date.now() - lastAutoSyncAt < AUTO_SYNC_THROTTLE_MS) return
+      lastAutoSyncAt = Date.now()
+      syncRef.current.mutate()
+    }
+    maybeSync() // on mount
+    window.addEventListener('focus', maybeSync)
+    document.addEventListener('visibilitychange', maybeSync)
+    return () => {
+      window.removeEventListener('focus', maybeSync)
+      document.removeEventListener('visibilitychange', maybeSync)
+    }
+  }, [enabled])
 }

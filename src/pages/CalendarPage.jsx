@@ -13,7 +13,7 @@ import { CalendarHeader } from '../components/calendar/CalendarHeader'
 import { MonthGrid } from '../components/calendar/MonthGrid'
 import { EventModal } from '../components/calendar/EventModal'
 import { events as eventsResource } from '../hooks/resources'
-import { useGoogleAccounts, useGoogleCalendarActions } from '../hooks/useIntegrations'
+import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync } from '../hooks/useIntegrations'
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -26,6 +26,7 @@ export default function CalendarPage() {
 
   const { data: gAccounts = [] } = useGoogleAccounts()
   const { sync } = useGoogleCalendarActions()
+  useGoogleAutoSync(gAccounts.length > 0, sync)
 
   // Compute the visible range (full grid including days from adjacent months)
   const from = format(startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 }), 'yyyy-MM-dd')
