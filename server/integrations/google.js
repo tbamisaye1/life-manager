@@ -192,13 +192,17 @@ async function syncAccountCalendars(email) {
   const tz = await homeTimezone()
   const timeMin = new Date(Date.now() - 14 * 864e5).toISOString()
   const timeMax = new Date(Date.now() + 120 * 864e5).toISOString()
+  // Window bounds as naive wall-clock so they compare like the stored `start`.
+  const winStart = instantToNaive(timeMin, tz)
+  const winEnd = instantToNaive(timeMax, tz)
   let n = 0
   for (const c of calendars) {
     let res
     try {
-      res = await cal.events.list({ calendarId: c.calendar_id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', maxResults: 250 })
+      res = await cal.events.list({ calendarId: c.calendar_id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', maxResults: 2500 })
     } catch { continue }
     const ts = now()
+    const seen = [] // Google event ids returned for this calendar this sync
     for (const e of res.data.items || []) {
       if (e.status === 'cancelled') continue
       const isAllDay = !!e.start?.date && !e.start?.dateTime
@@ -219,11 +223,35 @@ async function syncAccountCalendars(email) {
           VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,0,'google',@ext,@email,@cal,@ts,@ts)`)
           .run({ id: newId(), title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', ext: e.id, email, cal: c.calendar_id, ts })
       }
+      seen.push(e.id)
       n++
     }
+    // Prune the local mirror: drop events for this calendar inside the synced
+    // window that Google no longer returns (deleted or moved out in Google).
+    // Skip if the result was paginated — a partial list would prune events we
+    // simply didn't fetch this round.
+    if (!res.data.nextPageToken) await pruneStaleGoogleEvents(email, c.calendar_id, winStart, winEnd, seen)
   }
   await db.prepare('UPDATE google_accounts SET last_synced_at = ? WHERE email = ?').run(now(), email)
   return n
+}
+
+// Delete locally-mirrored Google events for one calendar within [winStart,winEnd]
+// whose external_id wasn't in the latest Google response — i.e. removed upstream.
+async function pruneStaleGoogleEvents(email, calendarId, winStart, winEnd, seenIds) {
+  // Don't touch rows written in the last 2 minutes — they may be app-created
+  // events Google hasn't indexed into the list response yet.
+  const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+  const params = { email, cal: calendarId, winStart, winEnd, cutoff }
+  let notIn = ''
+  if (seenIds.length) {
+    const placeholders = seenIds.map((id, i) => { params[`s${i}`] = id; return `@s${i}` })
+    notIn = ` AND external_id NOT IN (${placeholders.join(',')})`
+  }
+  await db.prepare(
+    `DELETE FROM events WHERE source='google' AND google_account=@email AND google_calendar_id=@cal
+       AND start >= @winStart AND start <= @winEnd AND created_at <= @cutoff${notIn}`,
+  ).run(params)
 }
 
 async function syncGmail(email) {
