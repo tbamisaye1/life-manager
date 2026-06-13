@@ -20,7 +20,7 @@ import { WeekTimeline } from '../components/schedule/WeekTimeline'
 import { EventModal } from '../components/calendar/EventModal'
 import { EventChip } from '../components/calendar/EventChip'
 import { events as eventsResource } from '../hooks/resources'
-import { useGoogleAccounts } from '../hooks/useIntegrations'
+import { useGoogleAccounts, useGoogleCalendarActions } from '../hooks/useIntegrations'
 import { toISOLocal } from '../components/schedule/timeline'
 import { cn } from '../lib/cn'
 
@@ -65,6 +65,7 @@ export default function DailySchedulePage() {
   // Per-account view filter ('all' or an account email)
   const [accountFilter, setAccountFilter] = useState('all')
   const { data: gAccounts = [] } = useGoogleAccounts()
+  const { sync } = useGoogleCalendarActions()
 
   // --- Date range for API query ---
   const weekStart = startOfWeek(anchorDate, { weekStartsOn: 1 })
@@ -143,6 +144,8 @@ export default function DailySchedulePage() {
         onNext={handleNext}
         onToday={handleToday}
         onNewEvent={openNewEvent}
+        onSync={gAccounts.length > 0 ? () => sync.mutate() : undefined}
+        syncing={sync.isPending}
       />
 
       {/* Per-account filter — default shows all calendars */}

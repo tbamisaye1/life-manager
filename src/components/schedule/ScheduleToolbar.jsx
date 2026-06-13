@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react'
 import { format, isToday, startOfWeek, endOfWeek } from 'date-fns'
 import { Button, IconButton } from '../ui'
 import { cn } from '../../lib/cn'
@@ -14,7 +14,7 @@ import { cn } from '../../lib/cn'
  *   onToday     – jump to today/this-week
  *   onNewEvent  – open create modal
  */
-export function ScheduleToolbar({ view, onViewChange, anchorDate, onPrev, onNext, onToday, onNewEvent }) {
+export function ScheduleToolbar({ view, onViewChange, anchorDate, onPrev, onNext, onToday, onNewEvent, onSync, syncing = false }) {
   const todayActive = view === 'day' ? isToday(anchorDate) : isThisWeek(anchorDate)
 
   const dateLabel = view === 'day'
@@ -62,6 +62,11 @@ export function ScheduleToolbar({ view, onViewChange, anchorDate, onPrev, onNext
 
       {/* Right: nav + New event */}
       <div className="flex items-center gap-1.5">
+        {onSync && (
+          <IconButton label="Sync Google calendars" onClick={onSync} disabled={syncing}>
+            <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
+          </IconButton>
+        )}
         <Button size="sm" onClick={onToday}>Today</Button>
         <IconButton label={view === 'day' ? 'Previous day' : 'Previous week'} onClick={onPrev}>
           <ChevronLeft className="h-4 w-4" />
