@@ -34,7 +34,8 @@ router.post('/', async (req, res) => {
   const ts = now()
   const id = newId()
   const parent_id = req.body.parent_id || null
-  const max = (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM pages WHERE parent_id IS @p OR parent_id = @p')
+  // IS NOT DISTINCT FROM handles NULL parent_id (top-level pages); plain IS @p is invalid in Postgres.
+  const max = (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM pages WHERE parent_id IS NOT DISTINCT FROM @p')
     .get({ p: parent_id })).m
   await db.prepare(`INSERT INTO pages (id,parent_id,title,icon,color,body,is_focus,sort_order,archived,created_at,updated_at)
     VALUES (@id,@parent_id,@title,@icon,@color,'',0,@sort,0,@ts,@ts)`).run({
