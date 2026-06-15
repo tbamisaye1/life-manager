@@ -5,6 +5,7 @@ import { Button, IconButton } from '../ui'
 import { cn } from '../../lib/cn'
 import { navMeta, resolveItemLabel } from '../../lib/nav'
 import { useNavLabels } from '../../hooks/useNavLabels'
+import { EditableNavTitle, EditableNoteTitle } from '../ui/EditableNavTitle'
 import { usePage } from '../../hooks/usePages'
 import { nameOfIcon } from '../../lib/icons'
 import { SearchPalette } from '../search/SearchPalette'
@@ -56,8 +57,27 @@ export function Topbar({ onQuickAdd }) {
           {!meta && notePage && (
             <span className="text-base leading-none">{notePage.icon || '📄'}</span>
           )}
+          {meta && (
+            <EditableNavTitle
+              path={pathname}
+              className="truncate text-base font-semibold text-zinc-900"
+              inputClassName="text-base px-1 py-0.5"
+            />
+          )}
+          {!meta && notePage && (
+            <EditableNoteTitle
+              page={notePage}
+              className="truncate text-base font-semibold text-zinc-900"
+              inputClassName="text-base px-1 py-0.5"
+            />
+          )}
           {!meta && noteId && !notePage && <FileText className="h-4 w-4 shrink-0 text-zinc-400" />}
-          <span className="truncate text-base font-semibold text-zinc-900">{title}</span>
+          {!meta && noteId && !notePage && (
+            <span className="truncate text-base font-semibold text-zinc-900">Untitled</span>
+          )}
+          {!meta && !noteId && (
+            <span className="truncate text-base font-semibold text-zinc-900">Life Manager</span>
+          )}
           {canFavorite && (
             <IconButton label={favved ? 'Remove from favorites' : 'Add to favorites'} active={favved} onClick={onToggleFav} className="h-7 w-7">
               <Star className={cn('h-4 w-4', favved && 'fill-amber-400 text-amber-400')} />

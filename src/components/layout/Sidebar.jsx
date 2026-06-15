@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronRight, Command } from 'lucide-react'
-import { buildNavSections, buildSettingsItem } from '../../lib/nav'
+import { buildNavSections, buildSettingsItem, navMeta } from '../../lib/nav'
 import { useToday } from '../../hooks/resources'
 import { useNavLabels, useRenameNavLabel, useResetNavLabel } from '../../hooks/useNavLabels'
 import { useFavorites } from '../../hooks/useFavorites'
@@ -11,6 +11,7 @@ import { SidebarSection } from './SidebarSection'
 import { SidebarLink } from './SidebarLink'
 import { SidebarNotesTree } from './SidebarNotesTree'
 import { FavoritesNav } from './FavoritesNav'
+import { SidebarEditProvider } from './SidebarEditContext'
 
 const NOTES_PATH = '/notes'
 const NOTES_EXPAND_KEY = 'lm.sidebar.notesExpanded'
@@ -55,7 +56,8 @@ export function Sidebar() {
   const renameSection = (defaultLabel) => (label) => rename.mutate({ sections: { [defaultLabel]: label } })
   const isCustom = (path) => Boolean(labels.items?.[path])
 
-  const navLinkProps = (item) => ({
+  const navLinkProps = (item, editKeyPrefix = 'nav') => ({
+    editKey: `${editKeyPrefix}-${item.path}`,
     to: item.path,
     icon: item.icon,
     label: item.label,
@@ -65,6 +67,19 @@ export function Sidebar() {
     customNamed: isCustom(item.path),
     favved: isFavorite(item.path),
     onToggleFavorite: () => toggle({ path: item.path, label: item.label, icon: nameOfIcon(item.icon) }),
+  })
+
+  const getNavProps = (path, label, meta) => ({
+    onRename: navMeta(path) ? renameItem(path) : undefined,
+    onResetName: () => resetLabel(path),
+    customNamed: isCustom(path),
+    favved: isFavorite(path),
+    onToggleFavorite: () => toggle({
+      path,
+      label,
+      icon: meta ? nameOfIcon(meta.icon) : 'Star',
+    }),
+    badge: badges[path],
   })
 
   return (
@@ -79,54 +94,56 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto pb-4">
-        <FavoritesNav labels={labels} onRenameSection={renameSection} />
-        {sections.map((section) => (
-          <SidebarSection
-            key={section.defaultLabel}
-            label={section.label}
-            onRenameLabel={renameSection(section.defaultLabel)}
-          >
-            {section.items.map((item) => (
-              item.path === NOTES_PATH ? (
-                <div key={item.path} className="space-y-0.5">
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setNotesExpanded((o) => !o)}
-                      aria-label={showNotesTree ? 'Collapse pages' : 'Expand pages'}
-                      aria-expanded={showNotesTree}
-                      className="absolute left-0.5 top-1/2 z-[1] flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-600"
-                    >
-                      <ChevronRight className={cn('h-3.5 w-3.5 transition-transform duration-150', showNotesTree && 'rotate-90')} />
-                    </button>
-                    <SidebarLink
-                      {...navLinkProps(item)}
-                      end={false}
-                      menuExtra={[{
-                        key: 'new-page',
-                        label: 'New page',
-                        onSelect: () => navigate('/notes'),
-                      }]}
-                    />
-                  </div>
-                  {showNotesTree && (
-                    <div className="ml-[22px] border-l border-zinc-200/70 pl-2">
-                      <SidebarNotesTree />
+      <SidebarEditProvider>
+        <nav className="flex-1 overflow-y-auto pb-4">
+          <FavoritesNav labels={labels} onRenameSection={renameSection} getNavProps={getNavProps} />
+          {sections.map((section) => (
+            <SidebarSection
+              key={section.defaultLabel}
+              label={section.label}
+              onRenameLabel={renameSection(section.defaultLabel)}
+            >
+              {section.items.map((item) => (
+                item.path === NOTES_PATH ? (
+                  <div key={item.path} className="space-y-0.5">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setNotesExpanded((o) => !o)}
+                        aria-label={showNotesTree ? 'Collapse pages' : 'Expand pages'}
+                        aria-expanded={showNotesTree}
+                        className="absolute left-0.5 top-1/2 z-[1] flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200/60 hover:text-zinc-600"
+                      >
+                        <ChevronRight className={cn('h-3.5 w-3.5 transition-transform duration-150', showNotesTree && 'rotate-90')} />
+                      </button>
+                      <SidebarLink
+                        {...navLinkProps(item, 'overview')}
+                        end={false}
+                        menuExtra={[{
+                          key: 'new-page',
+                          label: 'New page',
+                          onSelect: () => navigate('/notes'),
+                        }]}
+                      />
                     </div>
-                  )}
-                </div>
-              ) : (
-                <SidebarLink key={item.path} {...navLinkProps(item)} />
-              )
-            ))}
-          </SidebarSection>
-        ))}
-      </nav>
+                    {showNotesTree && (
+                      <div className="ml-[22px] border-l border-zinc-200/70 pl-2">
+                        <SidebarNotesTree />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <SidebarLink key={item.path} {...navLinkProps(item, 'overview')} />
+                )
+              ))}
+            </SidebarSection>
+          ))}
+        </nav>
 
-      <div className="border-t border-zinc-200 p-2">
-        <SidebarLink {...navLinkProps(settings)} />
-      </div>
+        <div className="border-t border-zinc-200 p-2">
+          <SidebarLink {...navLinkProps(settings, 'settings')} />
+        </div>
+      </SidebarEditProvider>
     </aside>
   )
 }

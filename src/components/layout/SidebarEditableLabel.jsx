@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
 
 /** Notion-style inline rename — double-click to edit, Enter/blur to save, Escape to cancel. */
@@ -12,10 +12,16 @@ export function SidebarEditableLabel({
 }) {
   const [internalEditing, setInternalEditing] = useState(false)
   const editing = editingProp ?? internalEditing
+  const inputRef = useRef(null)
+
   const setEditing = (next) => {
     if (onEditingChange) onEditingChange(next)
     else setInternalEditing(next)
   }
+
+  useLayoutEffect(() => {
+    if (editing) inputRef.current?.focus({ preventScroll: true })
+  }, [editing])
 
   const start = (e) => {
     e.preventDefault()
@@ -32,8 +38,7 @@ export function SidebarEditableLabel({
   if (editing) {
     return (
       <input
-        key={value}
-        autoFocus
+        ref={inputRef}
         defaultValue={value}
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
@@ -41,6 +46,7 @@ export function SidebarEditableLabel({
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
         }}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
         className={cn(
           'min-w-0 flex-1 rounded px-1 py-0.5 text-sm text-zinc-900 ring-1 ring-zinc-300/80 bg-zinc-50/80',
@@ -54,6 +60,7 @@ export function SidebarEditableLabel({
   return (
     <span
       onDoubleClick={start}
+      onMouseDown={(e) => { if (e.detail > 1) e.preventDefault() }}
       title="Double-click to rename"
       className={cn('truncate', className)}
     >
