@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Mail } from 'lucide-react'
-import { PageHeader, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, Loading, ErrorState } from '../components/ui'
 import { EmailFilters } from '../components/email/EmailFilters'
 import { EmailList } from '../components/email/EmailList'
 import { EmailReadingPane } from '../components/email/EmailReadingPane'
@@ -47,8 +47,8 @@ export default function EmailPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Email"
+      <NavPageHeader
+        path="/email"
         subtitle="Your inbox at a glance — pin what matters, note what to reply."
         icon={Mail}
       />

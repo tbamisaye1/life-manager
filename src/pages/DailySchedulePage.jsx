@@ -13,7 +13,7 @@ import {
   addHours,
   startOfHour,
 } from 'date-fns'
-import { PageHeader, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, Loading, ErrorState } from '../components/ui'
 import { ScheduleToolbar } from '../components/schedule/ScheduleToolbar'
 import { DayTimeline } from '../components/schedule/DayTimeline'
 import { WeekTimeline } from '../components/schedule/WeekTimeline'
@@ -131,8 +131,8 @@ export default function DailySchedulePage() {
 
   return (
     <div>
-      <PageHeader
-        title="Daily Schedule"
+      <NavPageHeader
+        path="/schedule"
         subtitle={pageSubtitle}
         icon={CalendarClock}
       />

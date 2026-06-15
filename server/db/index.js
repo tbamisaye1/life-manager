@@ -104,6 +104,9 @@ export async function initDb() {
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_account TEXT')
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_calendar_id TEXT')
   await client.exec('ALTER TABLE google_calendars ADD COLUMN IF NOT EXISTS timezone TEXT')
+  // Pages can be attached to tasks, projects, etc. (Notion-style nesting anywhere).
+  await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_type TEXT')
+  await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_id TEXT')
   return client.label
 }
 

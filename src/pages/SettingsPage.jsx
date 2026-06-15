@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Settings, ShieldCheck, Info } from 'lucide-react'
-import { PageHeader, Button, Input, Label, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, Button, Input, Label, Loading, ErrorState } from '../components/ui'
 import { IntegrationCard } from '../components/settings/IntegrationCard'
 import { GoogleAccountsCard } from '../components/settings/GoogleAccountsCard'
 import { useIntegrationStatus, useSyncProvider, useDisconnectProvider } from '../hooks/useIntegrations'
@@ -20,7 +20,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Settings & Sync" subtitle="Connect your accounts. Everything stays on your machine." icon={Settings} />
+      <NavPageHeader path="/settings" subtitle="Connect your accounts. Everything stays on your machine." icon={Settings} />
 
       {justConnected && (
         <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">

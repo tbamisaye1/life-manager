@@ -21,6 +21,7 @@ Notion-inspired: clean, spacious, calm, professional, easy on the eyes. Neutral 
 - Accessible: semantic HTML, labels, keyboard focus, aria where needed.
 - Loading/empty/error states for every data-driven view.
 - No dead code, no console spam, no unused imports.
+- **Visual QA:** Screenshot the running app (browser MCP at http://localhost:5180) in default, hover, active, and open-menu states before calling UI work done. Sidebar ⋯ menus must be hover/active-only — never visible on every row.
 
 ## How you collaborate
 You are part of an agent team. The **design-expert** critiques your visual/UX output, the **user-simulator** stress-tests real flows, and the **code-reviewer** audits structure. Incorporate their feedback. When given findings, fix them precisely and report what changed.

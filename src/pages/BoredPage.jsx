@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Sparkles, Plus, Shuffle, FileText, ArrowRight } from 'lucide-react'
-import { PageHeader, Button, Card, Input, Loading, ErrorState, EmptyState } from '../components/ui'
+import { Sparkles, Plus, Shuffle } from 'lucide-react'
+import { Button, Card, Input, Loading, ErrorState, EmptyState, NavPageHeader } from '../components/ui'
 import { BoredItemRow } from '../components/bored/BoredItemRow'
 import { BoredItemModal } from '../components/bored/BoredItemModal'
+import { FocusPageRow } from '../components/bored/FocusPageRow'
 import { boredItems as boredResource, useFocusPages } from '../hooks/resources'
+import { useUpdatePage } from '../hooks/usePages'
 
 export default function BoredPage() {
   const { data: items = [], isLoading, isError, refetch } = boredResource.useList()
@@ -12,6 +13,7 @@ export default function BoredPage() {
   const create = boredResource.useCreate()
   const update = boredResource.useUpdate()
   const remove = boredResource.useRemove()
+  const unflagPage = useUpdatePage()
   const [adding, setAdding] = useState('')
   const [editing, setEditing] = useState(undefined) // undefined=closed, null=new, obj=edit
   const [picked, setPicked] = useState(null)
@@ -37,8 +39,8 @@ export default function BoredPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader
-        title="I'm Bored"
+      <NavPageHeader
+        path="/bored"
         subtitle="Your own list of things to come back to — learn, build, improve."
         icon={Sparkles}
         actions={open.length > 0 && (
@@ -88,13 +90,11 @@ export default function BoredPage() {
           <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Flagged pages</p>
           <div className="space-y-2">
             {focusPages.map((p) => (
-              <Link key={p.id} to={`/notes/${p.id}`}>
-                <Card interactive className="flex items-center gap-3 p-3">
-                  <span className="text-lg">{p.icon || <FileText className="h-4 w-4 text-zinc-400" />}</span>
-                  <span className="flex-1 truncate text-sm font-medium text-zinc-700">{p.title}</span>
-                  <ArrowRight className="h-4 w-4 text-zinc-400" />
-                </Card>
-              </Link>
+              <FocusPageRow
+                key={p.id}
+                page={p}
+                onRemove={(id) => unflagPage.mutate({ id, is_focus: false })}
+              />
             ))}
           </div>
         </div>

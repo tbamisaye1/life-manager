@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CheckSquare } from 'lucide-react'
-import { PageHeader, EmptyState, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, EmptyState, Loading, ErrorState } from '../components/ui'
 import { TaskFilters } from '../components/tasks/TaskFilters'
 import { TaskList } from '../components/tasks/TaskList'
 import { TaskDetailModal } from '../components/tasks/TaskDetailModal'
@@ -22,8 +22,8 @@ export default function TasksPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Assignments & Tasks"
+      <NavPageHeader
+        path="/tasks"
         subtitle="Everything you owe, with clear deadlines."
         icon={CheckSquare}
       />

@@ -25,6 +25,7 @@ import pins from './routes/pins.js'
 import search from './routes/search.js'
 import assistant from './routes/assistant.js'
 import dashboard from './routes/dashboard.js'
+import settings from './routes/settings.js'
 
 // One-time DB init per process (works for both `node` and serverless cold starts).
 let initPromise = null
@@ -67,6 +68,7 @@ app.use('/api/bored-items', boredItems)
 app.use('/api/pins', pins)
 app.use('/api/search', search)
 app.use('/api/assistant', assistant)
+app.use('/api/settings', settings)
 app.use('/api', dashboard)
 
 app.use(errorMiddleware)

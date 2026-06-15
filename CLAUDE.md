@@ -1,7 +1,9 @@
 # Life Manager — project instructions
 
+See **`../AGENTS.md`** for full workspace instructions (web + mobile + agent team).
+
 A personal, **local-first** life-management app. React 19 + Vite + Tailwind v4
-frontend; local Express + better-sqlite3 backend. Notion/OneNote-inspired, calm,
+frontend; Express + PGlite (local) / Neon Postgres (prod) backend. Notion/OneNote-inspired, calm,
 component-heavy. See `SETUP.md` to run it.
 
 ## Git workflow (REQUIRED — never lose progress)
@@ -23,9 +25,9 @@ component-heavy. See `SETUP.md` to run it.
 ## Hard isolation rule
 
 This project must stay **100% isolated** from the user's Rotunda company project.
-**No cloud, no AWS** — the database is a local SQLite file in `server/db/`
-(gitignored). Never touch any AWS/Rotunda resource. Rotunda's dev server uses
+Never touch any AWS/Rotunda resource. Rotunda's dev server uses
 port 5173 — Life Manager runs on **5180 (web)** and **4000 (api)**; don't collide.
+Production uses dedicated Neon + Vercel (see `DEPLOY.md`).
 
 ## Dev
 
@@ -40,7 +42,6 @@ port 5173 — Life Manager runs on **5180 (web)** and **4000 (api)**; don't coll
   Tailwind strings — extract a component.
 - Data access via TanStack Query hooks (`src/hooks/`), never raw `fetch` in views.
 - Every data view has loading / empty / error states.
-- The agent team lives in `.claude/agents/` (backend-engineer, frontend-architect,
-  code-reviewer, design-expert, user-simulator, taskmaster). Custom agent names are
-  NOT valid `subagent_type`s in this harness — enact them via role-injected
-  `general-purpose` agents + the built-in `code-reviewer`.
+- Mobile counterpart: `../Life-Manager-Mobile/` — shared API, separate repo.
+- Agent team lives in `../.cursor/agents/` (backend-engineer, frontend-architect,
+  mobile-engineer, code-reviewer, design-expert, user-simulator, taskmaster).

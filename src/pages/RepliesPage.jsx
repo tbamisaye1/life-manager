@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MessageSquare, Plus } from 'lucide-react'
-import { PageHeader, Button, Card, Input, Select, Loading, ErrorState, EmptyState } from '../components/ui'
+import { NavPageHeader, Button, Card, Input, Select, Loading, ErrorState, EmptyState } from '../components/ui'
 import { ReplyItem } from '../components/replies/ReplyItem'
 import { PLATFORM_KEYS, platformMeta } from '../components/replies/platforms'
 import { replyQueue as replyResource } from '../hooks/resources'
@@ -29,8 +29,8 @@ export default function RepliesPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader
-        title="Reply Queue"
+      <NavPageHeader
+        path="/replies"
         subtitle="People you owe a message — across iMessage, WhatsApp, Instagram & more."
         icon={MessageSquare}
       />

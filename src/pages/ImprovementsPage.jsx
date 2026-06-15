@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TrendingUp, Plus } from 'lucide-react'
-import { PageHeader, Button, Modal, Input, Textarea, Label, Loading, ErrorState, EmptyState } from '../components/ui'
+import { NavPageHeader, Button, Modal, Input, Textarea, Label, Loading, ErrorState, EmptyState } from '../components/ui'
 import { ImprovementCard } from '../components/improvements/ImprovementCard'
 import { improvements as improvementsResource } from '../hooks/resources'
 
@@ -22,8 +22,8 @@ export default function ImprovementsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Improvements"
+      <NavPageHeader
+        path="/improvements"
         subtitle="The things you're actively trying to get better at. Each has its own page."
         icon={TrendingUp}
         actions={<Button variant="primary" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> New goal</Button>}

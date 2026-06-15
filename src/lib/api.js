@@ -3,10 +3,12 @@
 const BASE = '/api'
 
 async function request(path, options = {}) {
+  const { body, signal, ...rest } = options
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    ...rest,
+    signal,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
     let message = `Request failed (${res.status})`
@@ -21,8 +23,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body }),
-  patch: (path, body) => request(path, { method: 'PATCH', body }),
-  del: (path) => request(path, { method: 'DELETE' }),
+  get: (path, opts) => request(path, opts),
+  post: (path, body, opts) => request(path, { ...opts, method: 'POST', body }),
+  patch: (path, body, opts) => request(path, { ...opts, method: 'PATCH', body }),
+  del: (path, opts) => request(path, { ...opts, method: 'DELETE' }),
 }

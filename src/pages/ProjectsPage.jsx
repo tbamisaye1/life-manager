@@ -1,5 +1,5 @@
 import { FolderKanban } from 'lucide-react'
-import { PageHeader, Loading, ErrorState, EmptyState } from '../components/ui'
+import { NavPageHeader, Loading, ErrorState, EmptyState } from '../components/ui'
 import { ProjectCard } from '../components/projects/ProjectCard'
 import { projects as projectsResource } from '../hooks/resources'
 
@@ -11,8 +11,8 @@ export default function ProjectsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Projects & Jobs"
+      <NavPageHeader
+        path="/projects"
         subtitle="Everything you're juggling — and when you last moved each one forward."
         icon={FolderKanban}
       />

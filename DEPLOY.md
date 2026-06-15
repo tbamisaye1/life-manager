@@ -23,7 +23,8 @@ free **Neon** Postgres database.
 3. (Optional) Test locally: put it in `.env` as `DATABASE_URL=...`, run
    `npm run dev`, and confirm the app loads against Neon. Remove it from `.env`
    afterwards to go back to local PGlite, or keep it.
-   2.5. postgresql://neondb_owner:npg_XZb1hoO4spGj@ep-calm-cell-apku4wy4.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require
+
+**Never commit connection strings or passwords.** Store credentials only in `.env` (local) or Vercel environment variables (production).
 
 ## 2. Deploy to Vercel (free)
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Modal, Button, Input, Textarea, Select, Label } from '../ui'
+import { NestedPagesPanel } from '../pages/NestedPagesPanel'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent']
@@ -103,6 +104,10 @@ export function TaskDetailModal({ task, open, onClose }) {
           <Label>Notes</Label>
           <Textarea value={draft.notes || ''} onChange={(e) => set({ notes: e.target.value })} placeholder="Add detail…" />
         </div>
+
+        {task.id && (
+          <NestedPagesPanel hostType="task" hostId={task.id} hostLabel={draft.title} />
+        )}
       </div>
     </Modal>
   )

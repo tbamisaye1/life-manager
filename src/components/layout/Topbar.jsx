@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Star } from 'lucide-react'
+import { Plus, Search, Star, FileText } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { Button, IconButton } from '../ui'
 import { cn } from '../../lib/cn'
-import { navMeta } from '../../lib/nav'
+import { navMeta, resolveItemLabel } from '../../lib/nav'
+import { useNavLabels } from '../../hooks/useNavLabels'
+import { usePage } from '../../hooks/usePages'
 import { nameOfIcon } from '../../lib/icons'
 import { SearchPalette } from '../search/SearchPalette'
 import { PriorityPin } from './PriorityPin'
@@ -12,8 +14,15 @@ import { useFavorites } from '../../hooks/useFavorites'
 // Top bar: section title + favorite star + global search + priority pin + quick-add.
 export function Topbar({ onQuickAdd }) {
   const { pathname } = useLocation()
+  const { data: labels } = useNavLabels()
   const meta = navMeta(pathname)
-  const title = meta?.label || 'Life Manager'
+  const noteMatch = pathname.match(/^\/notes\/([^/]+)$/)
+  const noteId = noteMatch?.[1]
+  const { data: notePage } = usePage(noteId)
+  const title = meta
+    ? resolveItemLabel(pathname, meta.label, labels)
+    : notePage?.title || (noteId ? 'Untitled' : 'Life Manager')
+  const canFavorite = Boolean(meta || noteId)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const { isFavorite, toggle } = useFavorites()
@@ -32,7 +41,11 @@ export function Topbar({ onQuickAdd }) {
 
   // Favorite the current page (only meaningful for the primary nav routes).
   const favved = isFavorite(pathname)
-  const onToggleFav = () => toggle({ path: pathname, label: title, icon: meta ? nameOfIcon(meta.icon) : 'Star' })
+  const onToggleFav = () => toggle({
+    path: pathname,
+    label: title,
+    icon: meta ? nameOfIcon(meta.icon) : 'FileText',
+  })
 
   return (
     <>
@@ -40,8 +53,12 @@ export function Topbar({ onQuickAdd }) {
         {/* Left: section title + favorite star */}
         <div className="flex min-w-0 items-center gap-1.5">
           {meta?.icon && <meta.icon className="h-4 w-4 shrink-0 text-zinc-400" />}
+          {!meta && notePage && (
+            <span className="text-base leading-none">{notePage.icon || '📄'}</span>
+          )}
+          {!meta && noteId && !notePage && <FileText className="h-4 w-4 shrink-0 text-zinc-400" />}
           <span className="truncate text-base font-semibold text-zinc-900">{title}</span>
-          {meta && (
+          {canFavorite && (
             <IconButton label={favved ? 'Remove from favorites' : 'Add to favorites'} active={favved} onClick={onToggleFav} className="h-7 w-7">
               <Star className={cn('h-4 w-4', favved && 'fill-amber-400 text-amber-400')} />
             </IconButton>

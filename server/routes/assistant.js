@@ -64,31 +64,83 @@ router.delete('/conversations/:id', async (req, res) => {
   res.json({ ok: true })
 })
 
+async function loadPriorMessages(convId) {
+  return db.prepare('SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY created_at').all(convId)
+}
+
+async function truncateFromMessage(convId, messageId) {
+  const target = await db
+    .prepare('SELECT id, role, created_at FROM chat_messages WHERE id = ? AND conversation_id = ?')
+    .get(messageId, convId)
+  if (!target) return { ok: false, message: 'Message not found in this conversation.' }
+  if (target.role !== 'user') return { ok: false, message: 'Only user messages can be edited and resent.' }
+  await db
+    .prepare('DELETE FROM chat_messages WHERE conversation_id = ? AND created_at >= ?')
+    .run(convId, target.created_at)
+  return { ok: true }
+}
+
+// Cancel an in-flight request — removes the latest user message if the assistant
+// has not replied yet (the user hit Stop before the turn finished).
+router.post('/chat/cancel', async (req, res) => {
+  const { conversationId } = req.body
+  if (!conversationId) return res.status(400).json(httpError('conversationId is required.', 'VALIDATION'))
+
+  const last = await db
+    .prepare('SELECT id, role FROM chat_messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1')
+    .get(conversationId)
+  if (!last || last.role !== 'user') {
+    return res.json({ ok: true, cancelled: false, message: 'Nothing in progress to cancel.' })
+  }
+
+  await db.prepare('DELETE FROM chat_messages WHERE id = ?').run(last.id)
+  await db.prepare('UPDATE chat_conversations SET updated_at = ? WHERE id = ?').run(now(), conversationId)
+  res.json({ ok: true, cancelled: true, removedMessageId: last.id })
+})
+
 // ---- Chat ----
-// Persisted mode: { conversationId?, message }  → saves both turns, returns conversationId.
-// Stateless mode: { messages: [...] }           → runs without saving (used by mobile).
+// Persisted mode: { conversationId?, message, editFromMessageId? }
+// Stateless mode: { messages: [...] }
 router.post('/chat', async (req, res) => {
-  const { conversationId, message, messages } = req.body
+  const { conversationId, message, messages, editFromMessageId } = req.body
 
   if (typeof message === 'string' && message.trim()) {
+    const trimmed = message.trim()
     const ts = now()
     let convId = conversationId
+
+    if (editFromMessageId) {
+      if (!convId) return res.status(400).json(httpError('conversationId is required when editing a message.', 'VALIDATION'))
+      const truncated = await truncateFromMessage(convId, editFromMessageId)
+      if (!truncated.ok) return res.status(400).json(httpError(truncated.message, 'VALIDATION'))
+    }
+
     if (!convId) {
       convId = newId()
-      const title = message.trim().slice(0, 48)
+      const title = trimmed.slice(0, 48)
       await db.prepare('INSERT INTO chat_conversations (id,title,created_at,updated_at) VALUES (?,?,?,?)').run(convId, title, ts, ts)
     }
-    const prior = await db.prepare('SELECT role, content FROM chat_messages WHERE conversation_id = ? ORDER BY created_at').all(convId)
-    await db.prepare('INSERT INTO chat_messages (id,conversation_id,role,content,actions,created_at) VALUES (?,?,?,?,?,?)')
-      .run(newId(), convId, 'user', message, null, now())
 
-    const result = await runAssistant([...prior, { role: 'user', content: message }])
-
+    const prior = await loadPriorMessages(convId)
+    const userMessageId = newId()
     await db.prepare('INSERT INTO chat_messages (id,conversation_id,role,content,actions,created_at) VALUES (?,?,?,?,?,?)')
-      .run(newId(), convId, 'assistant', result.reply, JSON.stringify(result.actions || []), now())
+      .run(userMessageId, convId, 'user', trimmed, null, now())
+
+    const result = await runAssistant([...prior, { role: 'user', content: trimmed }])
+
+    const assistantMessageId = newId()
+    await db.prepare('INSERT INTO chat_messages (id,conversation_id,role,content,actions,created_at) VALUES (?,?,?,?,?,?)')
+      .run(assistantMessageId, convId, 'assistant', result.reply, JSON.stringify(result.actions || []), now())
     await db.prepare('UPDATE chat_conversations SET updated_at = ? WHERE id = ?').run(now(), convId)
 
-    return res.json({ conversationId: convId, reply: result.reply, actions: result.actions, configured: result.configured })
+    return res.json({
+      conversationId: convId,
+      userMessageId,
+      assistantMessageId,
+      reply: result.reply,
+      actions: result.actions,
+      configured: result.configured,
+    })
   }
 
   if (Array.isArray(messages) && messages.length) {

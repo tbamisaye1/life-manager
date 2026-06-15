@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Dumbbell, Plus, Calendar } from 'lucide-react'
-import { PageHeader, Button, Card, CardBody, EmptyState, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, Button, Card, CardBody, EmptyState, Loading, ErrorState } from '../components/ui'
 import { useRugbySessions } from '../hooks/useRugby'
 import { SkillTracker } from '../components/rugby/SkillTracker'
 import { SessionCard } from '../components/rugby/SessionCard'
@@ -45,8 +45,8 @@ export default function RugbyPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader
-        title="Rugby"
+      <NavPageHeader
+        path="/rugby"
         subtitle="Track your performance, sessions, and skills."
         icon={Dumbbell}
         actions={

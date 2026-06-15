@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Dumbbell, Calendar, CalendarDays, BookOpen, BarChart2 } from 'lucide-react'
-import { PageHeader } from '../components/ui'
+import { NavPageHeader } from '../components/ui'
 import { GymTabs } from '../components/gym/GymTabs'
 import { GymTodayTab } from '../components/gym/GymTodayTab'
 import { GymPlanTab } from '../components/gym/GymPlanTab'
@@ -21,7 +21,7 @@ export default function GymPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader title="Gym & Rehab" subtitle="Track sessions, progress your lifts, stay consistent." icon={Dumbbell} />
+      <NavPageHeader path="/gym" subtitle="Track sessions, progress your lifts, stay consistent." icon={Dumbbell} />
       <GymTabs tabs={TABS} value={tab} onChange={setTab} />
 
       {tab === 'today' && <GymTodayTab />}

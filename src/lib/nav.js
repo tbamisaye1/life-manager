@@ -49,3 +49,33 @@ FLAT[SETTINGS_ITEM.path] = SETTINGS_ITEM
 export function navMeta(path) {
   return FLAT[path] || null
 }
+
+export function resolveItemLabel(path, defaultLabel, labels) {
+  return labels?.items?.[path] || defaultLabel || ''
+}
+
+export function resolveSectionLabel(defaultLabel, labels) {
+  return labels?.sections?.[defaultLabel] || defaultLabel || ''
+}
+
+/** Nav sections with user-custom labels applied (for sidebar rendering). */
+export function buildNavSections(labels) {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    defaultLabel: section.label,
+    label: resolveSectionLabel(section.label, labels),
+    items: section.items.map((item) => ({
+      ...item,
+      defaultLabel: item.label,
+      label: resolveItemLabel(item.path, item.label, labels),
+    })),
+  }))
+}
+
+export function buildSettingsItem(labels) {
+  return {
+    ...SETTINGS_ITEM,
+    defaultLabel: SETTINGS_ITEM.label,
+    label: resolveItemLabel(SETTINGS_ITEM.path, SETTINGS_ITEM.label, labels),
+  }
+}

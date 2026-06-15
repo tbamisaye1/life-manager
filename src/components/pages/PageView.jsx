@@ -6,6 +6,7 @@ import { IconButton } from '../ui/IconButton'
 import { Button } from '../ui/Button'
 import { RichEditor } from '../editor/RichEditor'
 import { useUpdatePage, useDeletePage, useCreatePage } from '../../hooks/usePages'
+import { PageIconPicker } from './PageIconPicker'
 
 /**
  * The editor pane for a single page. Autosaves title + body on a debounce and
@@ -19,6 +20,7 @@ export function PageView({ page, childPages = [] }) {
   const createPage = useCreatePage()
 
   const [title, setTitle] = useState(page.title)
+  const [icon, setIcon] = useState(page.icon || '')
   const [focus, setFocus] = useState(page.is_focus)
   const [createError, setCreateError] = useState(null)
 
@@ -47,6 +49,11 @@ export function PageView({ page, childPages = [] }) {
     update.mutate({ id: page.id, is_focus: next })
   }
 
+  const onIconChange = (next) => {
+    setIcon(next)
+    update.mutate({ id: page.id, icon: next || '' })
+  }
+
   const addSubpage = async () => {
     setCreateError(null)
     try {
@@ -73,7 +80,7 @@ export function PageView({ page, childPages = [] }) {
               <ChevronRight className="h-3 w-3" />
             </span>
           ))}
-          <span className="truncate text-zinc-700">{page.icon} {title || 'Untitled'}</span>
+          <span className="truncate text-zinc-700">{icon || '📄'} {title || 'Untitled'}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="mr-1 text-xs text-zinc-400">
@@ -100,8 +107,8 @@ export function PageView({ page, childPages = [] }) {
       </div>
 
       {/* Title */}
-      <div className="mb-2 flex min-w-0 items-center gap-2">
-        <span className="text-3xl">{page.icon || '📄'}</span>
+      <div className="mb-2 flex min-w-0 items-start gap-2">
+        <PageIconPicker value={icon} onChange={onIconChange} />
         <input
           value={title}
           onChange={(e) => onTitle(e.target.value)}

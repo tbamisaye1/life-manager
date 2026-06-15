@@ -4,11 +4,18 @@ import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers
 import { httpError } from '../lib/http.js'
 
 const router = Router()
-const ALLOWED = ['title', 'body', 'icon', 'color', 'parent_id', 'sort_order', 'is_focus', 'archived']
+const ALLOWED = ['title', 'body', 'icon', 'color', 'parent_id', 'host_type', 'host_id', 'sort_order', 'is_focus', 'archived']
 const BOOLS = ['is_focus', 'archived']
 
-// GET /api/pages — flat list of all non-archived pages; the client builds the tree.
+// GET /api/pages — flat list; optional ?host_type=&host_id= for pages nested under an entity.
 router.get('/', async (req, res) => {
+  const { host_type, host_id } = req.query
+  if (host_type && host_id) {
+    const rows = await db.prepare(
+      'SELECT * FROM pages WHERE archived = 0 AND host_type = ? AND host_id = ? ORDER BY sort_order, created_at',
+    ).all(host_type, host_id)
+    return res.json(mapRows(rows, BOOLS))
+  }
   const rows = await db.prepare('SELECT * FROM pages WHERE archived = 0 ORDER BY sort_order, created_at').all()
   res.json(mapRows(rows, BOOLS))
 })
@@ -34,12 +41,14 @@ router.post('/', async (req, res) => {
   const ts = now()
   const id = newId()
   const parent_id = req.body.parent_id || null
+  const host_type = req.body.host_type || null
+  const host_id = req.body.host_id || null
   // IS NOT DISTINCT FROM handles NULL parent_id (top-level pages); plain IS @p is invalid in Postgres.
   const max = (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM pages WHERE parent_id IS NOT DISTINCT FROM @p')
     .get({ p: parent_id })).m
-  await db.prepare(`INSERT INTO pages (id,parent_id,title,icon,color,body,is_focus,sort_order,archived,created_at,updated_at)
-    VALUES (@id,@parent_id,@title,@icon,@color,'',0,@sort,0,@ts,@ts)`).run({
-    id, parent_id,
+  await db.prepare(`INSERT INTO pages (id,parent_id,host_type,host_id,title,icon,color,body,is_focus,sort_order,archived,created_at,updated_at)
+    VALUES (@id,@parent_id,@host_type,@host_id,@title,@icon,@color,'',0,@sort,0,@ts,@ts)`).run({
+    id, parent_id, host_type, host_id,
     title: req.body.title?.trim() || 'Untitled',
     icon: req.body.icon || '📄',
     color: req.body.color || null,

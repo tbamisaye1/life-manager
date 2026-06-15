@@ -84,17 +84,51 @@ export function buildGymTools({ record }) {
   // Shared gym-logging helpers (used by log_set and log_sets)
   // -------------------------------------------------------------------------
 
-  // Resolve an exercise by name with ranked matching: exact → prefix → closest
-  // (shortest) substring. Avoids "deadlift" grabbing a long unrelated name when
-  // a closer one exists.
+  function normalizeExerciseName(name) {
+    return name.trim().toLowerCase().replace(/[-–—]/g, ' ').replace(/\s+/g, ' ')
+  }
+
+  function exerciseTokens(name) {
+    return normalizeExerciseName(name).split(' ').filter(Boolean)
+  }
+
+  // Ranked matching: exact (incl. hyphen/space variants) → prefix → all query
+  // tokens present → substring. Prefers shorter names on ties so "pull ups"
+  // beats "slow pull-ups" when the user said "pull ups", but "slow pull ups"
+  // still resolves to "slow pull-ups".
   async function findExercise(name) {
-    const n = name.trim()
-    return (
-      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 LIMIT 1').get(n)) ||
-      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 ORDER BY LENGTH(name) LIMIT 1').get(`${n}%`)) ||
-      (await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE name ILIKE ? AND archived = 0 ORDER BY LENGTH(name) LIMIT 1').get(`%${n}%`)) ||
-      null
-    )
+    const n = normalizeExerciseName(name)
+    const tokens = exerciseTokens(name)
+    if (!n) return null
+
+    const rows = await db.prepare('SELECT id, name, unit FROM gym_exercises WHERE archived = 0').all()
+    let best = null
+    let bestScore = -1
+
+    for (const row of rows) {
+      const rn = normalizeExerciseName(row.name)
+      let score = -1
+
+      if (rn === n) score = 100
+      else if (rn.startsWith(n)) score = 85
+      else if (n.startsWith(rn)) score = 80
+      else {
+        const rtokens = exerciseTokens(row.name)
+        const allMatch = tokens.every((t) => rtokens.some((rt) => rt === t || rt.includes(t) || t.includes(rt)))
+        if (allMatch) {
+          score = 65 - (rtokens.length - tokens.length) * 8 - Math.abs(rn.length - n.length) * 0.05
+        } else if (rn.includes(n) || n.includes(rn)) {
+          score = 45 - Math.abs(rn.length - n.length) * 0.05
+        }
+      }
+
+      if (score > bestScore || (score === bestScore && best && row.name.length < best.name.length)) {
+        bestScore = score
+        best = row
+      }
+    }
+
+    return bestScore > 0 ? best : null
   }
 
   async function ensureExercise(name) {
@@ -124,6 +158,35 @@ export function buildGymTools({ record }) {
   async function nextSetNumber(workoutId, exerciseId) {
     const row = await db.prepare('SELECT MAX(set_number) AS max_set FROM gym_sets WHERE workout_id = ? AND exercise_id = ?').get(workoutId, exerciseId)
     return Number(row?.max_set ?? 0) + 1
+  }
+
+  async function clearExerciseSets(workoutId, exerciseId) {
+    const before = await db
+      .prepare('SELECT COUNT(*) AS c FROM gym_sets WHERE workout_id = ? AND exercise_id = ?')
+      .get(workoutId, exerciseId)
+    await db.prepare('DELETE FROM gym_sets WHERE workout_id = ? AND exercise_id = ?').run(workoutId, exerciseId)
+    return Number(before?.c ?? 0)
+  }
+
+  async function workoutSetSummary(workoutId) {
+    const rows = await db
+      .prepare(
+        `SELECT e.name, e.id AS exercise_id, COUNT(s.id) AS set_count,
+                MAX(s.weight) AS weight, MAX(s.reps) AS reps
+         FROM gym_sets s
+         JOIN gym_exercises e ON e.id = s.exercise_id
+         WHERE s.workout_id = ?
+         GROUP BY e.id, e.name
+         ORDER BY MIN(s.set_number)`,
+      )
+      .all(workoutId)
+    return rows.map((r) => ({
+      exercise: r.name,
+      exercise_id: r.exercise_id,
+      sets: Number(r.set_count),
+      weight: r.weight,
+      reps: r.reps,
+    }))
   }
 
   async function insertSet({ workoutId, exerciseId, setNumber, weight, reps, notes }) {
@@ -167,25 +230,31 @@ export function buildGymTools({ record }) {
   // log_sets  (MANY identical sets in ONE call — exact count, no looping)
   // -------------------------------------------------------------------------
   const logSets = tool(
-    async ({ exercise_name, sets, reps, weight, date, notes }) => {
+    async ({ exercise_name, sets, reps, weight, date, notes, replace }) => {
       const count = Math.max(1, Math.min(20, Math.round(Number(sets))))
       const day = date || localDateStr()
       const { exercise, created } = await ensureExercise(exercise_name)
       if (created) record(`🆕 Added exercise "${exercise.name}"`)
       const workout = await ensureTodayWorkout(day)
-      let setNumber = await nextSetNumber(workout.id, exercise.id)
+      let setNumber = 1
+      if (replace) {
+        const removed = await clearExerciseSets(workout.id, exercise.id)
+        if (removed) record(`🗑️ Cleared ${removed} existing set${removed === 1 ? '' : 's'} for "${exercise.name}"`)
+      } else {
+        setNumber = await nextSetNumber(workout.id, exercise.id)
+      }
       for (let i = 0; i < count; i++) {
         await insertSet({ workoutId: workout.id, exerciseId: exercise.id, setNumber, weight, reps, notes })
         setNumber++
       }
       const per = weight != null && reps != null ? `${weight}${exercise.unit} × ${reps}` : reps != null ? `${reps} reps` : weight != null ? `${weight}${exercise.unit}` : ''
       record(`🏋️ Logged ${exercise.name} — ${count} sets${per ? ` of ${per}` : ''}`)
-      return JSON.stringify({ ok: true, exercise: exercise.name, sets: count, reps: reps ?? null, weight: weight ?? null, auto_created_exercise: created })
+      return JSON.stringify({ ok: true, exercise: exercise.name, sets: count, reps: reps ?? null, weight: weight ?? null, replaced: !!replace, auto_created_exercise: created })
     },
     {
       name: 'log_sets',
       description:
-        "ALWAYS use this (NOT repeated log_set calls) when the user states a number of sets — e.g. '3 sets of 10', '5x5 at 100kg', 'leg press 4 sets of 12'. Creates EXACTLY `sets` identical sets in one call — never more, never fewer. Resolves/creates the exercise and today's workout automatically.",
+        "Log MANY identical sets in one call. Use replace:true when the user wants to CHANGE an exercise's set count (e.g. 'change to 5 sets', 'make it 5x5', 'update to 5 sets of 5') — that clears existing sets for that exercise in today's workout first, then logs exactly `sets` new ones. Without replace, sets are APPENDED after any already logged. ALWAYS use this (not repeated log_set) when the user states a set count.",
       schema: z.object({
         exercise_name: z.string().describe('Full or partial exercise name'),
         sets: z.number().int().min(1).max(20).describe('EXACT number of sets to create'),
@@ -193,6 +262,7 @@ export function buildGymTools({ record }) {
         weight: z.number().optional().describe('weight per set (unit matches exercise)'),
         date: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
         notes: z.string().optional(),
+        replace: z.boolean().optional().describe('true = clear this exercise\'s existing sets in the workout first, then log exactly `sets` new ones'),
       }),
     },
   )
@@ -213,11 +283,16 @@ export function buildGymTools({ record }) {
         .prepare('SELECT id, title, routine_id, completed FROM gym_workouts WHERE date = ? ORDER BY created_at')
         .all(today)
 
-      return JSON.stringify({ ok: true, date: today, weekday: dayOfWeek, scheduled_routines: scheduledRoutines, workouts })
+      const enriched = []
+      for (const w of workouts) {
+        enriched.push({ ...w, exercises: await workoutSetSummary(w.id) })
+      }
+
+      return JSON.stringify({ ok: true, date: today, weekday: dayOfWeek, scheduled_routines: scheduledRoutines, workouts: enriched })
     },
     {
       name: 'get_gym_today',
-      description: "Return today's date, routines scheduled for today's weekday, and any workouts already logged today.",
+      description: "Return today's date, scheduled routines, and any workouts logged today — including each exercise's current set count. Call this before changing or removing workout entries so you know what's already logged.",
       schema: z.object({}),
     },
   )
@@ -451,6 +526,34 @@ export function buildGymTools({ record }) {
   )
 
   // -------------------------------------------------------------------------
+  // clear_exercise_sets — remove logged sets for one exercise from a workout
+  // -------------------------------------------------------------------------
+  const clearExerciseSetsTool = tool(
+    async ({ exercise_name, date }) => {
+      const day = date || localDateStr()
+      const exercise = await findExercise(exercise_name)
+      if (!exercise) return JSON.stringify({ ok: false, message: `No exercise matching "${exercise_name}".` })
+      const workout = await db
+        .prepare('SELECT id FROM gym_workouts WHERE date = ? ORDER BY created_at DESC LIMIT 1')
+        .get(day)
+      if (!workout) return JSON.stringify({ ok: false, message: `No workout on ${day}.` })
+      const removed = await clearExerciseSets(workout.id, exercise.id)
+      if (removed) record(`🗑️ Cleared ${removed} set${removed === 1 ? '' : 's'} for "${exercise.name}" from ${day}'s workout`)
+      else record(`ℹ️ No sets to clear for "${exercise.name}" on ${day}`)
+      return JSON.stringify({ ok: true, exercise: exercise.name, date: day, cleared: removed })
+    },
+    {
+      name: 'clear_exercise_sets',
+      description:
+        "Remove all logged sets for one exercise from a workout (defaults to today's). Use to drop a duplicate/wrong entry from today's workout WITHOUT deleting the exercise definition or the whole workout. Prefer this over delete_exercise when cleaning up a workout log.",
+      schema: z.object({
+        exercise_name: z.string(),
+        date: z.string().optional().describe('YYYY-MM-DD; defaults to today'),
+      }),
+    },
+  )
+
+  // -------------------------------------------------------------------------
   // delete_workout — by id, by date, or all. Cascades to its sets.
   // -------------------------------------------------------------------------
   const deleteWorkout = tool(
@@ -486,9 +589,7 @@ export function buildGymTools({ record }) {
   // -------------------------------------------------------------------------
   const deleteExercise = tool(
     async ({ exercise_name }) => {
-      const exercise = await db
-        .prepare('SELECT id, name FROM gym_exercises WHERE name ILIKE ? LIMIT 1')
-        .get(`%${exercise_name}%`)
+      const exercise = await findExercise(exercise_name)
       if (!exercise) return JSON.stringify({ ok: false, message: `No exercise matching "${exercise_name}".` })
       await db.prepare('DELETE FROM gym_exercises WHERE id = ?').run(exercise.id)
       record(`🗑️ Deleted exercise "${exercise.name}"`)
@@ -496,7 +597,7 @@ export function buildGymTools({ record }) {
     },
     {
       name: 'delete_exercise',
-      description: 'Delete an exercise (resolved by name ILIKE) from the library, along with its logged sets and routine links.',
+      description: 'Delete an exercise from the library (and all its logged sets everywhere). Only use when the user wants the exercise gone entirely — NOT for removing a duplicate entry from today\'s workout (use clear_exercise_sets instead).',
       schema: z.object({ exercise_name: z.string() }),
     },
   )
@@ -506,9 +607,7 @@ export function buildGymTools({ record }) {
   // -------------------------------------------------------------------------
   const updateExercise = tool(
     async ({ exercise_name, new_name, category, unit, muscle_group, rep_low, rep_high, default_sets, increment, notes }) => {
-      const exercise = await db
-        .prepare('SELECT id, name FROM gym_exercises WHERE name ILIKE ? AND archived = 0 LIMIT 1')
-        .get(`%${exercise_name}%`)
+      const exercise = await findExercise(exercise_name)
       if (!exercise) return JSON.stringify({ ok: false, message: `No exercise matching "${exercise_name}".` })
       const sets = []
       const p = { id: exercise.id, ts: now() }
@@ -635,6 +734,7 @@ export function buildGymTools({ record }) {
     finishWorkout,
     listWorkouts,
     deleteWorkout,
+    clearExerciseSetsTool,
     deleteExercise,
     deleteRoutine,
     updateExercise,

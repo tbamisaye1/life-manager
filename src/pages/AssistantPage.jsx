@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Bot, AlertCircle } from 'lucide-react'
-import { PageHeader, Spinner } from '../components/ui'
+import { NavPageHeader, Spinner } from '../components/ui'
 import { ChatMessage } from '../components/assistant/ChatMessage'
 import { ChatComposer } from '../components/assistant/ChatComposer'
 import { ConversationList } from '../components/assistant/ConversationList'
@@ -21,60 +21,80 @@ export default function AssistantPage() {
   const { data: status } = useAssistantStatus()
   const sendMessage = useSendMessage()
 
-  // null  → new / empty chat
-  // id    → a persisted conversation
   const [conversationId, setConversationId] = useState(null)
-
-  // Optimistic messages shown while the request is in flight
-  // Format: [{ role, content, actions?, optimistic? }]
   const [optimistic, setOptimistic] = useState([])
-
   const [draft, setDraft] = useState('')
+  const [editingMessageId, setEditingMessageId] = useState(null)
   const bottomRef = useRef(null)
 
-  // Fetch messages for the selected conversation
   const { data: convData, isLoading: convLoading } = useConversation(conversationId)
 
-  // Displayed messages = server messages + any optimistic overlay (stable ref)
   const messages = useMemo(
     () => (conversationId ? [...(convData?.messages ?? []), ...optimistic] : optimistic),
     [conversationId, convData, optimistic],
   )
 
-  // Auto-scroll when messages change or while pending
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sendMessage.isPending])
 
-  // When a conversation is selected from the list, clear the optimistic buffer
   const handleSelectConversation = (id) => {
     setConversationId(id)
     setOptimistic([])
     setDraft('')
+    setEditingMessageId(null)
+  }
+
+  const startEdit = (msg) => {
+    if (sendMessage.isPending || !msg.id || msg.role !== 'user') return
+    setEditingMessageId(msg.id)
+    setDraft(msg.content)
+    setOptimistic([])
+  }
+
+  const cancelEdit = () => {
+    setEditingMessageId(null)
+    setDraft('')
+  }
+
+  const stopRequest = async () => {
+    await sendMessage.cancel(conversationId)
+    setOptimistic([])
   }
 
   const send = (text) => {
     const content = (text ?? draft).trim()
     if (!content || sendMessage.isPending) return
 
-    // Show user bubble immediately
-    setOptimistic([{ role: 'user', content, optimistic: true }])
+    const editFromMessageId = editingMessageId || undefined
+
+    if (editFromMessageId) {
+      const idx = messages.findIndex((m) => m.id === editFromMessageId)
+      const kept = idx >= 0 ? messages.slice(0, idx) : messages
+      setOptimistic([...kept, { role: 'user', content, optimistic: true }])
+    } else {
+      setOptimistic([{ role: 'user', content, optimistic: true }])
+    }
+
     setDraft('')
+    setEditingMessageId(null)
 
     sendMessage.mutate(
-      { conversationId, message: content },
+      { conversationId, message: content, editFromMessageId },
       {
         onSuccess: (data) => {
-          // Adopt the (possibly new) conversation id
           if (data.conversationId && data.conversationId !== conversationId) {
             setConversationId(data.conversationId)
           }
-          // Clear optimistic — the real messages will be fetched via invalidation
           setOptimistic([])
         },
         onError: (err) => {
+          if (err.name === 'AbortError') {
+            setOptimistic([])
+            return
+          }
           setOptimistic((prev) => [
-            ...prev,
+            ...prev.filter((m) => !m.optimistic),
             {
               role: 'assistant',
               content: `Sorry, something went wrong. ${err.message}`,
@@ -90,10 +110,7 @@ export default function AssistantPage() {
   const isEmpty = messages.length === 0 && !convLoading
 
   return (
-    // Stretch to fill the AppShell content area; break out of the max-w-6xl
-    // constraint by using negative margins so the two-pane layout feels full-width.
     <div className="-mx-6 -my-8 flex h-[calc(100vh-4rem)] overflow-hidden">
-      {/* ── Left panel: conversation history ───────────────────────── */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-zinc-200 bg-white py-4 sm:flex">
         <ConversationList
           selectedId={conversationId}
@@ -101,17 +118,14 @@ export default function AssistantPage() {
         />
       </aside>
 
-      {/* ── Right panel: active chat ────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Inner content area with comfortable max width */}
         <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-4 py-6">
-          <PageHeader
-            title="Assistant"
+          <NavPageHeader
+            path="/assistant"
             icon={Bot}
             subtitle="Reads your schedule and can create events, tasks, and reminders."
           />
 
-          {/* Not-configured notice */}
           {notConfigured && (
             <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
@@ -127,21 +141,18 @@ export default function AssistantPage() {
             </div>
           )}
 
-          {/* Disclaimer */}
           <p className="mb-4 text-xs text-zinc-500">
             The assistant can read your schedule and make changes — review actions below each reply.
+            Hover your messages to edit and resend; use Stop to cancel a request in progress.
           </p>
 
-          {/* Message list */}
           <div className="flex-1 space-y-4 overflow-y-auto pb-4 pr-1">
-            {/* Loading skeleton for selected conversation */}
             {convLoading && (
               <div className="flex justify-center py-8">
                 <Spinner />
               </div>
             )}
 
-            {/* Empty state / example prompts */}
             {isEmpty && !convLoading && (
               <div className="flex flex-col items-start gap-2 pt-4">
                 <p className="text-sm text-zinc-500">Try asking something like…</p>
@@ -161,17 +172,17 @@ export default function AssistantPage() {
               </div>
             )}
 
-            {/* Messages */}
             {messages.map((msg, i) => (
               <ChatMessage
                 key={msg.id ?? `opt-${i}`}
                 role={msg.role}
                 content={msg.content}
                 actions={msg.actions ?? []}
+                canEdit={!sendMessage.isPending && !editingMessageId}
+                onEdit={msg.role === 'user' && msg.id ? () => startEdit(msg) : undefined}
               />
             ))}
 
-            {/* Thinking indicator */}
             {sendMessage.isPending && (
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Spinner />
@@ -182,13 +193,20 @@ export default function AssistantPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Composer */}
           <div className="pt-3">
             <ChatComposer
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onSend={() => send()}
+              onStop={stopRequest}
+              onCancelEdit={cancelEdit}
               disabled={sendMessage.isPending}
+              pending={sendMessage.isPending}
+              editingLabel={
+                editingMessageId
+                  ? 'Editing message — send to resend from here (later replies will be removed)'
+                  : null
+              }
             />
           </div>
         </div>

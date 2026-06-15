@@ -8,7 +8,7 @@ import {
   addMonths,
   format,
 } from 'date-fns'
-import { PageHeader, Loading, ErrorState } from '../components/ui'
+import { NavPageHeader, Loading, ErrorState } from '../components/ui'
 import { CalendarHeader } from '../components/calendar/CalendarHeader'
 import { MonthGrid } from '../components/calendar/MonthGrid'
 import { EventModal } from '../components/calendar/EventModal'
@@ -45,8 +45,8 @@ export default function CalendarPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Calendar"
+      <NavPageHeader
+        path="/calendar"
         subtitle="Your events, at a glance."
         icon={Calendar}
       />

@@ -3,7 +3,8 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { QuickAdd } from '../shared/QuickAdd'
-import { navMeta } from '../../lib/nav'
+import { navMeta, resolveItemLabel } from '../../lib/nav'
+import { useNavLabels } from '../../hooks/useNavLabels'
 import { api } from '../../lib/api'
 
 // App frame: sidebar + top bar + routed page. Also records "recents" on
@@ -11,13 +12,26 @@ import { api } from '../../lib/api'
 export function AppShell() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const { pathname } = useLocation()
+  const { data: labels } = useNavLabels()
 
-  // Track recents (fire-and-forget; never blocks navigation).
   useEffect(() => {
     const meta = navMeta(pathname)
-    if (!meta) return
-    api.post('/favorites/recents', { path: pathname, label: meta.label, icon: meta.icon?.displayName || 'FileText' }).catch(() => {})
-  }, [pathname])
+    if (meta) {
+      const label = resolveItemLabel(pathname, meta.label, labels)
+      api.post('/favorites/recents', { path: pathname, label, icon: meta.icon?.displayName || 'FileText' }).catch(() => {})
+      return
+    }
+    const noteMatch = pathname.match(/^\/notes\/([^/]+)$/)
+    if (noteMatch) {
+      api.get(`/pages/${noteMatch[1]}`)
+        .then((p) => api.post('/favorites/recents', {
+          path: pathname,
+          label: p.title || 'Untitled',
+          icon: 'FileText',
+        }))
+        .catch(() => {})
+    }
+  }, [pathname, labels])
 
   // Global shortcut: "n" opens quick add (ignored while typing).
   useEffect(() => {

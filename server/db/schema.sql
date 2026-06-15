@@ -193,6 +193,8 @@ CREATE TABLE IF NOT EXISTS integration_accounts (
 CREATE TABLE IF NOT EXISTS pages (
   id            TEXT PRIMARY KEY,
   parent_id     TEXT REFERENCES pages(id) ON DELETE CASCADE,
+  host_type     TEXT,                            -- task | project | improvement | null
+  host_id       TEXT,                            -- id of the host entity
   title         TEXT NOT NULL DEFAULT 'Untitled',
   icon          TEXT,                            -- emoji
   color         TEXT,                            -- optional accent for top sections

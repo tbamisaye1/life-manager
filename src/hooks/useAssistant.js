@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -39,27 +40,56 @@ export function useConversation(id) {
   })
 }
 
-// ─── Send message ─────────────────────────────────────────────────────────────
+// ─── Send message (with optional edit/resend + abort) ────────────────────────
 /**
- * mutate({ conversationId?, message })
- * → { conversationId, reply, actions, configured }
+ * mutate({ conversationId?, message, editFromMessageId? })
+ * → { conversationId, userMessageId, assistantMessageId, reply, actions, configured }
+ *
+ * cancel() — abort in-flight request and remove the pending user turn server-side
  */
 export function useSendMessage() {
   const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ conversationId, message }) =>
-      api.post('/assistant/chat', { conversationId, message }),
+  const abortRef = useRef(null)
+
+  const mutation = useMutation({
+    mutationFn: async ({ conversationId, message, editFromMessageId }) => {
+      const controller = new AbortController()
+      abortRef.current = controller
+      try {
+        return await api.post(
+          '/assistant/chat',
+          { conversationId, message, editFromMessageId },
+          { signal: controller.signal },
+        )
+      } finally {
+        abortRef.current = null
+      }
+    },
     onSuccess: (data) => {
       const cid = data.conversationId
       queryClient.invalidateQueries({ queryKey: keys.conversations })
       if (cid) {
         queryClient.invalidateQueries({ queryKey: keys.conversation(cid) })
       }
-      // Broadly invalidate so any side-effects (created events/tasks/bored items)
-      // surface immediately across all pages.
       queryClient.invalidateQueries()
     },
   })
+
+  const cancel = async (conversationId) => {
+    abortRef.current?.abort()
+    if (conversationId) {
+      try {
+        await api.post('/assistant/chat/cancel', { conversationId })
+        queryClient.invalidateQueries({ queryKey: keys.conversation(conversationId) })
+        queryClient.invalidateQueries({ queryKey: keys.conversations })
+      } catch {
+        // Best-effort — client abort still stops the UI wait
+      }
+    }
+    mutation.reset()
+  }
+
+  return { ...mutation, cancel }
 }
 
 // ─── Delete conversation ──────────────────────────────────────────────────────

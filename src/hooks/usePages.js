@@ -4,6 +4,14 @@ import { api } from '../lib/api'
 /** Flat list of all pages (the tree is built client-side from parent_id). */
 export const usePages = () => useQuery({ queryKey: ['pages'], queryFn: () => api.get('/pages') })
 
+/** Pages attached to a task, project, etc. */
+export const usePagesByHost = (hostType, hostId) =>
+  useQuery({
+    queryKey: ['pages', 'host', hostType, hostId],
+    queryFn: () => api.get(`/pages?host_type=${hostType}&host_id=${hostId}`),
+    enabled: Boolean(hostType && hostId),
+  })
+
 /** A single page with its body + breadcrumb trail. */
 export const usePage = (id) =>
   useQuery({ queryKey: ['pages', 'item', id], queryFn: () => api.get(`/pages/${id}`), enabled: !!id })
@@ -12,7 +20,9 @@ export function useCreatePage() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (body) => api.post('/pages', body),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['pages'] }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['pages'] })
+    },
   })
 }
 

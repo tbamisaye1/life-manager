@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ListChecks, Plus } from 'lucide-react'
-import { PageHeader, Button, Card, Input, Loading, ErrorState, EmptyState } from '../components/ui'
+import { NavPageHeader, Button, Card, Input, Loading, ErrorState, EmptyState } from '../components/ui'
 import { PriorityItem } from '../components/priorities/PriorityItem'
 import { PriorityDetailModal } from '../components/priorities/PriorityDetailModal'
 import { priorities as prioritiesResource, useCheckPriority } from '../hooks/resources'
@@ -28,8 +28,8 @@ export default function PrioritiesPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <PageHeader
-        title="Daily Priorities"
+      <NavPageHeader
+        path="/priorities"
         subtitle={`The things you want to stay on top of — ${doneCount}/${items.length} done for now.`}
         icon={ListChecks}
       />
