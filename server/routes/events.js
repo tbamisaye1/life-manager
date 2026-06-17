@@ -3,10 +3,11 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { expandRecurrence } from '../lib/recurrence.js'
+import { idsForScope, googleTimingFields, LOCAL_ONLY_FIELDS, RECUR_SCOPES } from '../lib/eventSeries.js'
 import * as googleI from '../integrations/google.js'
 
 const router = Router()
-const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship', 'series_id']
+const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship', 'series_id', 'flagship_override']
 const BOOLS = ['all_day', 'flagship']
 
 // GET /api/events?from=ISO&to=ISO&flagship=1
@@ -97,35 +98,68 @@ router.delete('/series/:seriesId', async (req, res) => {
 })
 
 router.patch('/:id', async (req, res) => {
+  const scope = RECUR_SCOPES.includes(req.body.scope) ? req.body.scope : 'one'
+  const patch = { ...req.body }
+  delete patch.scope
+
   const existing = await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
-  // For Google-synced events, push the edit to Google FIRST so the next sync
-  // doesn't revert it; only persist locally if Google accepted (or it's local).
-  if (existing?.source === 'google') {
+  if (!existing) return res.status(404).json(httpError('Event not found', 'NOT_FOUND'))
+
+  const targetIds = await idsForScope(db, existing, scope)
+  const touchesGoogleTiming = googleTimingFields(patch)
+  const localOnly = !touchesGoogleTiming || [...Object.keys(patch)].every((k) => LOCAL_ONLY_FIELDS.has(k))
+
+  // Google write-back: one instance, or the series master for "all".
+  if (existing.source === 'google' && !localOnly) {
     try {
-      await googleI.pushUpdate(existing, req.body)
+      if (scope === 'one') {
+        await googleI.pushUpdate(existing, patch)
+      } else if (scope === 'all') {
+        await googleI.pushUpdateSeriesMaster(existing, patch)
+      }
+      // "following" timing changes stay local-only until we split the Google series.
     } catch (err) {
       return res.status(502).json(httpError(`Couldn't update the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
     }
   }
-  const patch = { ...req.body }
+
   if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
-  if ('flagship' in patch) patch.flagship = patch.flagship ? 1 : 0
-  const upd = buildUpdate('events', req.params.id, patch, ALLOWED)
-  if (upd) await db.prepare(upd.sql).run(upd.params)
+  if ('flagship' in patch) {
+    patch.flagship = patch.flagship ? 1 : 0
+    if (scope === 'one' || scope === 'following') patch.flagship_override = 1
+  }
+
+  for (const id of targetIds) {
+    const upd = buildUpdate('events', id, patch, ALLOWED)
+    if (upd) await db.prepare(upd.sql).run(upd.params)
+  }
+
   res.json(decodeBooleans(await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id), BOOLS))
 })
 
 router.delete('/:id', async (req, res) => {
+  const scope = RECUR_SCOPES.includes(req.query.scope) ? req.query.scope : 'one'
   const existing = await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
-  if (existing?.source === 'google') {
+  if (!existing) return res.status(404).json(httpError('Event not found', 'NOT_FOUND'))
+
+  const targetIds = await idsForScope(db, existing, scope)
+
+  if (existing.source === 'google') {
     try {
-      await googleI.pushDelete(existing)
+      if (scope === 'one') {
+        await googleI.pushDelete(existing)
+      } else if (scope === 'all') {
+        await googleI.pushDeleteSeriesMaster(existing)
+      }
     } catch (err) {
       return res.status(502).json(httpError(`Couldn't delete the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
     }
   }
-  await db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id)
-  res.json({ ok: true })
+
+  for (const id of targetIds) {
+    await db.prepare('DELETE FROM events WHERE id = ?').run(id)
+  }
+  res.json({ ok: true, deleted: targetIds.length })
 })
 
 export default router

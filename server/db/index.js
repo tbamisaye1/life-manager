@@ -108,6 +108,8 @@ export async function initDb() {
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_type TEXT')
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_id TEXT')
   await client.exec('ALTER TABLE gym_exercises ADD COLUMN IF NOT EXISTS target_weight REAL')
+  // Per-instance flagship override — survives Google sync.
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship_override INTEGER NOT NULL DEFAULT 0')
   // Bracket-titled events (e.g. "[All Hands]") belong on the month overview.
   await client.exec("UPDATE events SET flagship = 1 WHERE flagship = 0 AND title LIKE '[%'")
   return client.label

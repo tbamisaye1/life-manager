@@ -8,6 +8,8 @@ import { useGoogleCalendars, useGoogleAccounts } from '../../hooks/useIntegratio
 import { api } from '../../lib/api'
 import { PROJECT_COLORS, colorClasses } from '../../lib/colors'
 import { cn } from '../../lib/cn'
+import { isRecurringEvent } from '../../lib/eventSeries'
+import { RecurringScopeModal } from './RecurringScopeModal'
 
 // Build "Add to" targets: local + each selected Google calendar; default = the
 // default account's primary calendar.
@@ -94,6 +96,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     repeat: 'none',
     weekdays: [],
   })
+  const [scopeModal, setScopeModal] = useState(null) // { action: 'save'|'delete', payload }
   const { data: projectList = [] } = projectsResource.useList()
   const create = eventsResource.useCreate()
   const update = eventsResource.useUpdate()
@@ -147,22 +150,24 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     })
   }
 
-  const save = async () => {
-    const payload = {
-      title: draft.title,
-      start: draft.start,
-      end: draft.end || draft.start,
-      all_day: draft.all_day ? 1 : 0,
-      location: draft.location || null,
-      notes: draft.notes || null,
-      color: draft.color || DEFAULT_COLOR,
-      project_id: draft.project_id || null,
-      flagship: draft.flagship ? 1 : 0,
-    }
+  const buildPayload = () => ({
+    title: draft.title,
+    start: draft.start,
+    end: draft.end || draft.start,
+    all_day: draft.all_day ? 1 : 0,
+    location: draft.location || null,
+    notes: draft.notes || null,
+    color: draft.color || DEFAULT_COLOR,
+    project_id: draft.project_id || null,
+    flagship: draft.flagship ? 1 : 0,
+  })
+
+  const saveWithScope = async (scope) => {
+    const payload = { ...buildPayload(), scope }
     if (isEditing) {
       await update.mutateAsync({ id: event.id, ...payload })
     } else if (isGoogleTarget) {
-      await createGoogle.mutateAsync({ ...payload, email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
+      await createGoogle.mutateAsync({ ...buildPayload(), email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
     } else if (isRepeating) {
       await createLocalRecurring.mutateAsync({
         title: payload.title, all_day: payload.all_day, location: payload.location, notes: payload.notes,
@@ -172,20 +177,41 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         ...recurrenceFields(),
       })
     } else {
-      await create.mutateAsync(payload)
+      await create.mutateAsync(buildPayload())
     }
+    setScopeModal(null)
     onClose()
   }
 
-  const del = async () => {
-    await remove.mutateAsync(event.id)
+  const save = () => {
+    if (isEditing && isRecurringEvent(event)) {
+      setScopeModal({ action: 'save' })
+      return
+    }
+    saveWithScope('one')
+  }
+
+  const delWithScope = async (scope) => {
+    await api.del(`/events/${event.id}?scope=${scope}`)
+    queryClient.invalidateQueries({ queryKey: ['events'] })
+    queryClient.invalidateQueries({ queryKey: ['today'] })
+    setScopeModal(null)
     onClose()
+  }
+
+  const del = () => {
+    if (isRecurringEvent(event)) {
+      setScopeModal({ action: 'delete' })
+      return
+    }
+    remove.mutateAsync(event.id).then(onClose)
   }
 
   const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending || createLocalRecurring.isPending
   const customInvalid = draft.repeat === 'custom' && draft.weekdays.length === 0
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -362,5 +388,14 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         </div>
       </div>
     </Modal>
+
+    <RecurringScopeModal
+      open={!!scopeModal}
+      title={scopeModal?.action === 'delete' ? `Delete “${event?.title}”` : `Save “${event?.title}”`}
+      action={scopeModal?.action}
+      onClose={() => setScopeModal(null)}
+      onChoose={(scope) => (scopeModal?.action === 'delete' ? delWithScope(scope) : saveWithScope(scope))}
+    />
+    </>
   )
 }

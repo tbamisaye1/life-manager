@@ -8,6 +8,7 @@ import { google } from 'googleapis'
 import { db } from '../db/index.js'
 import { newId, now } from '../lib/helpers.js'
 import { flagshipFromGoogleEvent } from '../lib/flagship.js'
+import { seriesKey } from '../lib/eventSeries.js'
 
 // Full calendar scope so we can list every calendar and (later) write to them.
 const SCOPES = [
@@ -214,8 +215,9 @@ async function syncAccountCalendars(email) {
       const start = isAllDay ? rawStart : instantToNaive(rawStart, tz)
       const end = isAllDay ? rawEnd : instantToNaive(rawEnd, tz)
       const allDay = isAllDay ? 1 : 0
-      const existing = await db.prepare("SELECT id, flagship FROM events WHERE source='google' AND external_id=?").get(e.id)
-      const flagship = flagshipFromGoogleEvent(e.summary, existing?.flagship)
+      const existing = await db.prepare("SELECT id, flagship, flagship_override FROM events WHERE source='google' AND external_id=?").get(e.id)
+      let flagship = flagshipFromGoogleEvent(e.summary, existing?.flagship)
+      if (existing?.flagship_override) flagship = existing.flagship
       if (existing) {
         await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, flagship=@flagship, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
           .run({ id: existing.id, title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', flagship, email, cal: c.calendar_id, ts })
@@ -401,6 +403,28 @@ export async function pushUpdate(event, patch) {
   return true
 }
 
+/** Patch the recurring series master (all instances on Google). */
+export async function pushUpdateSeriesMaster(event, patch) {
+  const sk = seriesKey(event)
+  if (!sk?.masterId || event.source !== 'google') return pushUpdate(event, patch)
+  const auth = await authedClientFor(event.google_account)
+  if (!auth) return false
+  const cal = google.calendar({ version: 'v3', auth })
+  const tz = await homeTimezone()
+  const body = {}
+  if (patch.title !== undefined) body.summary = patch.title
+  if (patch.location !== undefined) body.location = patch.location
+  if (patch.notes !== undefined) body.description = patch.notes
+  if (patch.start !== undefined || patch.end !== undefined || patch.all_day !== undefined) {
+    const allDay = (patch.all_day ?? event.all_day) ? true : false
+    const parts = timeParts(patch.start ?? event.start, patch.end ?? event.end, allDay, tz)
+    body.start = parts.start
+    body.end = parts.end
+  }
+  await cal.events.patch({ calendarId: event.google_calendar_id, eventId: sk.masterId, requestBody: body })
+  return true
+}
+
 export async function pushDelete(event) {
   if (event.source !== 'google' || !event.google_account || !event.external_id) return false
   const auth = await authedClientFor(event.google_account)
@@ -410,6 +434,21 @@ export async function pushDelete(event) {
     await cal.events.delete({ calendarId: event.google_calendar_id, eventId: event.external_id })
   } catch (e) {
     if (e.code !== 404 && e.code !== 410) throw e // already gone is fine
+  }
+  return true
+}
+
+/** Delete the whole recurring series on Google. */
+export async function pushDeleteSeriesMaster(event) {
+  const sk = seriesKey(event)
+  if (!sk?.masterId || event.source !== 'google') return pushDelete(event)
+  const auth = await authedClientFor(event.google_account)
+  if (!auth) return false
+  const cal = google.calendar({ version: 'v3', auth })
+  try {
+    await cal.events.delete({ calendarId: event.google_calendar_id, eventId: sk.masterId })
+  } catch (e) {
+    if (e.code !== 404 && e.code !== 410) throw e
   }
   return true
 }
