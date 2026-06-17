@@ -126,5 +126,95 @@ export function buildRugbyTools({ record }) {
     },
   )
 
-  return [logRugbySession, listRugbySessions, addRugbySkill, updateRugbySkill]
+  const updateRugbySession = tool(
+    async ({ session_id, date, type, opponent, position, rating, notes }) => {
+      let session
+      if (session_id) {
+        session = await db.prepare('SELECT id, date FROM rugby_sessions WHERE id = ?').get(session_id)
+      } else if (date) {
+        session = await db.prepare('SELECT id, date FROM rugby_sessions WHERE date = ? ORDER BY created_at DESC LIMIT 1').get(date)
+      } else {
+        return JSON.stringify({ ok: false, message: 'Provide session_id or date.' })
+      }
+      if (!session) return JSON.stringify({ ok: false, message: 'No matching rugby session.' })
+      const sets = []
+      const p = { id: session.id, ts: now() }
+      if (type !== undefined) { sets.push('type = @type'); p.type = type }
+      if (opponent !== undefined) { sets.push('opponent = @opponent'); p.opponent = opponent }
+      if (position !== undefined) { sets.push('position = @position'); p.position = position }
+      if (rating !== undefined) { sets.push('rating = @rating'); p.rating = rating }
+      if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE rugby_sessions SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated rugby session`)
+      return JSON.stringify({ ok: true, id: session.id })
+    },
+    {
+      name: 'update_rugby_session',
+      description: 'Edit a rugby session by id (from list_rugby_sessions) or by date (most recent that day).',
+      schema: z.object({
+        session_id: z.string().optional(),
+        date: z.string().optional().describe('YYYY-MM-DD'),
+        type: z.enum(['game', 'training']).optional(),
+        opponent: z.string().optional(),
+        position: z.string().optional(),
+        rating: z.number().int().min(1).max(10).optional(),
+        notes: z.string().optional(),
+      }),
+    },
+  )
+
+  const deleteRugbySession = tool(
+    async ({ session_id, date }) => {
+      let session
+      if (session_id) {
+        session = await db.prepare('SELECT id FROM rugby_sessions WHERE id = ?').get(session_id)
+      } else if (date) {
+        session = await db.prepare('SELECT id FROM rugby_sessions WHERE date = ? ORDER BY created_at DESC LIMIT 1').get(date)
+      } else {
+        return JSON.stringify({ ok: false, message: 'Provide session_id or date.' })
+      }
+      if (!session) return JSON.stringify({ ok: false, message: 'No matching rugby session.' })
+      await db.prepare('DELETE FROM rugby_sessions WHERE id = ?').run(session.id)
+      record(`🗑️ Deleted rugby session`)
+      return JSON.stringify({ ok: true, id: session.id })
+    },
+    {
+      name: 'delete_rugby_session',
+      description: 'Delete a rugby session by id or by date (most recent that day).',
+      schema: z.object({
+        session_id: z.string().optional(),
+        date: z.string().optional().describe('YYYY-MM-DD'),
+      }),
+    },
+  )
+
+  const listRugbySkills = tool(
+    async () => {
+      const rows = await db.prepare('SELECT id, name, current_level, target_level FROM rugby_skills ORDER BY sort_order').all()
+      return JSON.stringify(rows)
+    },
+    {
+      name: 'list_rugby_skills',
+      description: 'List all tracked rugby skills with current and target levels.',
+      schema: z.object({}),
+    },
+  )
+
+  const deleteRugbySkill = tool(
+    async ({ name }) => {
+      const skill = await db.prepare('SELECT id, name FROM rugby_skills WHERE name ILIKE ? LIMIT 1').get(`%${name}%`)
+      if (!skill) return JSON.stringify({ ok: false, message: `No rugby skill matching "${name}".` })
+      await db.prepare('DELETE FROM rugby_skills WHERE id = ?').run(skill.id)
+      record(`🗑️ Deleted skill "${skill.name}"`)
+      return JSON.stringify({ ok: true, id: skill.id })
+    },
+    {
+      name: 'delete_rugby_skill',
+      description: 'Delete a rugby skill from tracking, found by name fragment.',
+      schema: z.object({ name: z.string() }),
+    },
+  )
+
+  return [logRugbySession, listRugbySessions, updateRugbySession, deleteRugbySession, addRugbySkill, listRugbySkills, updateRugbySkill, deleteRugbySkill]
 }

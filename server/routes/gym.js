@@ -7,7 +7,7 @@ import { suggestForExercise } from '../lib/gym.js'
 const router = Router()
 
 // ---------------- Exercise library ----------------
-const EX_ALLOWED = ['name', 'category', 'muscle_group', 'unit', 'rep_low', 'rep_high', 'default_sets', 'increment', 'notes', 'archived']
+const EX_ALLOWED = ['name', 'category', 'muscle_group', 'unit', 'rep_low', 'rep_high', 'default_sets', 'target_weight', 'increment', 'notes', 'archived']
 
 router.get('/exercises', async (req, res) => {
   const { category } = req.query
@@ -21,11 +21,12 @@ router.post('/exercises', async (req, res) => {
   const { name } = req.body
   if (!name?.trim()) return res.status(400).json(httpError('Name is required', 'VALIDATION'))
   const ts = now(); const id = newId()
-  await db.prepare(`INSERT INTO gym_exercises (id,name,category,muscle_group,unit,rep_low,rep_high,default_sets,increment,notes,archived,created_at,updated_at)
-    VALUES (@id,@name,@category,@muscle_group,@unit,@rep_low,@rep_high,@default_sets,@increment,@notes,0,@ts,@ts)`).run({
+  await db.prepare(`INSERT INTO gym_exercises (id,name,category,muscle_group,unit,rep_low,rep_high,default_sets,increment,target_weight,notes,archived,created_at,updated_at)
+    VALUES (@id,@name,@category,@muscle_group,@unit,@rep_low,@rep_high,@default_sets,@increment,@target_weight,@notes,0,@ts,@ts)`).run({
     id, name: name.trim(), category: req.body.category || 'strength', muscle_group: req.body.muscle_group || null,
     unit: req.body.unit || 'kg', rep_low: req.body.rep_low ?? 8, rep_high: req.body.rep_high ?? 12,
-    default_sets: req.body.default_sets ?? 3, increment: req.body.increment ?? 2.5, notes: req.body.notes || '', ts,
+    default_sets: req.body.default_sets ?? 3, increment: req.body.increment ?? 2.5,
+    target_weight: req.body.target_weight ?? null, notes: req.body.notes || '', ts,
   })
   res.status(201).json(await db.prepare('SELECT * FROM gym_exercises WHERE id = ?').get(id))
 })

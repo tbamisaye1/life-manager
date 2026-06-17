@@ -206,5 +206,54 @@ export function buildInboxTools({ record }) {
     },
   )
 
-  return [listEmails, setEmailReplyNote, markEmailReplied, pinEmail, listReplies, addReply, markReplyDone]
+  const updateReply = tool(
+    async ({ person, new_person, platform, context, due_date, done }) => {
+      const row = await db
+        .prepare('SELECT id, person FROM reply_queue WHERE person ILIKE ? ORDER BY created_at DESC LIMIT 1')
+        .get(`%${person}%`)
+      if (!row) return JSON.stringify({ ok: false, message: `No reply entry for "${person}".` })
+      const sets = []
+      const p = { id: row.id, ts: now() }
+      if (new_person !== undefined) { sets.push('person = @person'); p.person = new_person }
+      if (platform !== undefined) { sets.push('platform = @platform'); p.platform = platform }
+      if (context !== undefined) { sets.push('context = @context'); p.context = context }
+      if (due_date !== undefined) { sets.push('due_date = @due_date'); p.due_date = due_date || null }
+      if (done !== undefined) { sets.push('done = @done'); p.done = done ? 1 : 0 }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE reply_queue SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated reply to ${new_person || row.person}`)
+      return JSON.stringify({ ok: true, id: row.id })
+    },
+    {
+      name: 'update_reply',
+      description: 'Edit a reply-queue entry: rename person, change platform/context/due date, or mark done/undone.',
+      schema: z.object({
+        person: z.string().describe('current person name fragment'),
+        new_person: z.string().optional(),
+        platform: z.enum(['imessage', 'whatsapp', 'instagram', 'snapchat', 'email', 'other']).optional(),
+        context: z.string().optional(),
+        due_date: z.string().optional(),
+        done: z.boolean().optional(),
+      }),
+    },
+  )
+
+  const deleteReply = tool(
+    async ({ person }) => {
+      const row = await db
+        .prepare('SELECT id, person FROM reply_queue WHERE person ILIKE ? ORDER BY created_at DESC LIMIT 1')
+        .get(`%${person}%`)
+      if (!row) return JSON.stringify({ ok: false, message: `No reply entry for "${person}".` })
+      await db.prepare('DELETE FROM reply_queue WHERE id = ?').run(row.id)
+      record(`🗑️ Removed reply to ${row.person}`)
+      return JSON.stringify({ ok: true, id: row.id })
+    },
+    {
+      name: 'delete_reply',
+      description: 'Remove someone from the reply queue, matched by person name fragment.',
+      schema: z.object({ person: z.string() }),
+    },
+  )
+
+  return [listEmails, setEmailReplyNote, markEmailReplied, pinEmail, listReplies, addReply, updateReply, markReplyDone, deleteReply]
 }

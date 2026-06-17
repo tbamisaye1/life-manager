@@ -29,6 +29,7 @@ export function ExerciseRow({ exercise, onEdit }) {
         <p className="mt-0.5 text-xs text-zinc-400">
           {exercise.muscle_group && <span>{exercise.muscle_group} · </span>}
           {exercise.rep_low}–{exercise.rep_high} reps · {exercise.default_sets} sets
+          {exercise.target_weight != null ? ` · @ ${exercise.target_weight}${exercise.unit}` : ''}
           {exercise.increment ? ` · +${exercise.increment}${exercise.unit}` : ''}
         </p>
       </div>

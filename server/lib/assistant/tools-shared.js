@@ -1,4 +1,5 @@
 import { db } from '../../db/index.js'
+import * as googleI from '../../integrations/google.js'
 
 // Shared helpers for the assistant tools. Everything works in local wall-clock
 // time — "3pm" means 3pm to the user.
@@ -38,6 +39,34 @@ export async function firstFreeSlot(date, duration, earliest, latest) {
   }
   if (cursor + duration > dayEnd) return null
   return { start: minutesToIso(date, cursor), end: minutesToIso(date, cursor + duration) }
+}
+
+// Search events by title fragment and optional date range / flagship filter.
+export async function findEvents({ query, from, to, flagshipOnly, source, limit = 25 } = {}) {
+  const where = []
+  const params = []
+  if (query) { where.push('title ILIKE ?'); params.push(`%${query}%`) }
+  if (from) { where.push('substr(start,1,10) >= ?'); params.push(from) }
+  if (to) { where.push('substr(start,1,10) <= ?'); params.push(to) }
+  if (flagshipOnly) where.push('flagship = 1')
+  if (source) { where.push('source = ?'); params.push(source) }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const lim = Math.min(Math.max(1, limit), 50)
+  const rows = await db
+    .prepare(`SELECT id, title, start, "end", all_day, flagship, source, series_id FROM events ${clause} ORDER BY start LIMIT ${lim}`)
+    .all(...params)
+  return rows.map((r) => ({ ...r, flagship: !!r.flagship }))
+}
+
+// Delete one event locally and on Google when applicable.
+export async function removeEventById(eventId) {
+  const ev = await db.prepare('SELECT * FROM events WHERE id = ?').get(eventId)
+  if (!ev) return { ok: false, message: 'No event with that id.' }
+  if (ev.source === 'google') {
+    try { await googleI.pushDelete(ev) } catch { /* keep going — drop local mirror */ }
+  }
+  await db.prepare('DELETE FROM events WHERE id = ?').run(eventId)
+  return { ok: true, id: eventId, title: ev.title }
 }
 
 // Match a project by name/short code; returns its id or null.

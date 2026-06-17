@@ -2,7 +2,7 @@ import { tool } from '@langchain/core/tools'
 import { z } from 'zod'
 import { db } from '../../db/index.js'
 import { newId, now, localDateStr } from '../helpers.js'
-import { firstFreeSlot, addMinutes, resolveProjectId } from './tools-shared.js'
+import { firstFreeSlot, addMinutes, resolveProjectId, findEvents, removeEventById } from './tools-shared.js'
 import { expandRecurrence } from '../recurrence.js'
 import * as googleI from '../../integrations/google.js'
 import { buildGymTools } from './tools-gym.js'
@@ -23,7 +23,7 @@ export function buildTools(record) {
     async ({ date }) => {
       const day = date || localDateStr()
       const events = await db
-        .prepare('SELECT id, title, start, "end", all_day, series_id FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
+        .prepare('SELECT id, title, start, "end", all_day, flagship, source, series_id FROM events WHERE substr(start,1,10) = ? ORDER BY all_day DESC, start')
         .all(day)
       // Include ids (and series_id for recurring) so the model can move/delete.
       return JSON.stringify({ date: day, events })
@@ -59,6 +59,9 @@ export function buildTools(record) {
     async ({ title, start, end, duration_minutes, all_day, location, notes, color, flagship, project, calendar }) => {
       const finish = end || (all_day ? start : addMinutes(start, duration_minutes || 60))
 
+      // Month-calendar (flagship) events must stay app-local — Google sync clears flagship.
+      if (flagship) calendar = 'local'
+
       // Default: put it on the default Google calendar (Yahoo) — which also
       // shows in the app's daily schedule. Only stay app-local if asked.
       if (!isLocalOnly(calendar)) {
@@ -93,7 +96,7 @@ export function buildTools(record) {
     },
     {
       name: 'schedule_event',
-      description: 'Create an event. By DEFAULT it goes on the default Google calendar (Yahoo) and also appears in the app schedule. Pass calendar="yale"/"rotunda"/"yahoo" (or a calendar name) to target another; pass calendar="local" to keep it only in the app. Set flagship=true for a big month-overview event (local only).',
+      description: 'Create an event. By DEFAULT it goes on the default Google calendar (Yahoo) and also appears in the app schedule. Pass calendar="yale"/"rotunda"/"yahoo" (or a calendar name) to target another; pass calendar="local" to keep it only in the app. Set flagship=true for a month-calendar overview event — this ALWAYS stays app-local (never Google).',
       schema: z.object({
         title: z.string(),
         calendar: z.string().optional().describe('Where to put it: omit for default (Yahoo); "yale"/"rotunda"/"yahoo"/a calendar name; or "local" for app-only.'),
@@ -112,8 +115,23 @@ export function buildTools(record) {
 
   const updateEvent = tool(
     async ({ event_id, title, start, end, all_day, location, notes, color, flagship }) => {
-      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
-      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id (use get_schedule first).' })
+      const ev = await db.prepare('SELECT * FROM events WHERE id = ?').get(event_id)
+      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id (use find_events first).' })
+      const patch = {}
+      if (title !== undefined) patch.title = title
+      if (start !== undefined) patch.start = start
+      if (end !== undefined) patch.end = end
+      if (all_day !== undefined) patch.all_day = all_day ? 1 : 0
+      if (location !== undefined) patch.location = location
+      if (notes !== undefined) patch.notes = notes
+      if (color !== undefined) patch.color = color
+      if (flagship !== undefined) patch.flagship = flagship ? 1 : 0
+      if (!Object.keys(patch).length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      if (ev.source === 'google') {
+        try { await googleI.pushUpdate(ev, patch) } catch (err) {
+          return JSON.stringify({ ok: false, message: `Couldn't update on Google: ${err.message}` })
+        }
+      }
       const sets = []
       const p = { id: event_id, ts: now() }
       if (title !== undefined) { sets.push('title = @title'); p.title = title }
@@ -124,14 +142,13 @@ export function buildTools(record) {
       if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
       if (color !== undefined) { sets.push('color = @color'); p.color = color }
       if (flagship !== undefined) { sets.push('flagship = @flagship'); p.flagship = flagship ? 1 : 0 }
-      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
       await db.prepare(`UPDATE events SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
       record(`✏️ Updated “${title || ev.title}”`)
       return JSON.stringify({ ok: true, id: event_id })
     },
     {
       name: 'update_event',
-      description: "Edit an existing event's details (ids from get_schedule): rename, change time, location, notes, colour, all-day, or flagship status. To only move the time, reschedule_event is simpler.",
+      description: "Edit an existing event's details (ids from find_events): rename, change time, location, notes, colour, all-day, or flagship status. To only move the time, reschedule_event is simpler.",
       schema: z.object({
         event_id: z.string(),
         title: z.string().optional(),
@@ -275,17 +292,50 @@ export function buildTools(record) {
     { name: 'list_tasks', description: 'List tasks (filter: open | done | all) to see what exists.', schema: z.object({ filter: z.enum(['open', 'done', 'all']).optional() }) },
   )
 
+  const findEventsTool = tool(
+    async ({ query, from, to, flagship_only, limit }) => {
+      const rows = await findEvents({ query, from, to, flagshipOnly: flagship_only, limit })
+      return JSON.stringify({ count: rows.length, events: rows })
+    },
+    {
+      name: 'find_events',
+      description:
+        'Search events across ALL days by title fragment (and optional date range). Returns id, title, start, flagship, source. ALWAYS call this before delete_event when the user names an event — get_schedule is only one day and is easy to misread.',
+      schema: z.object({
+        query: z.string().optional().describe('title contains this (e.g. "Arya", "[PRKB/England]")'),
+        from: z.string().optional().describe('YYYY-MM-DD inclusive'),
+        to: z.string().optional().describe('YYYY-MM-DD inclusive'),
+        flagship_only: z.boolean().optional().describe('true = only month-calendar events'),
+        limit: z.number().int().optional().describe('max rows (default 25)'),
+      }),
+    },
+  )
+
+  const listFlagshipEvents = tool(
+    async ({ from, to }) => {
+      const rows = await findEvents({ from, to, flagshipOnly: true, limit: 50 })
+      return JSON.stringify({ count: rows.length, events: rows })
+    },
+    {
+      name: 'list_flagship_events',
+      description: 'List month-calendar (flagship) events in a date range. Use before creating/editing flagship events so you know what already exists.',
+      schema: z.object({
+        from: z.string().optional().describe('YYYY-MM-DD inclusive; omit for no lower bound'),
+        to: z.string().optional().describe('YYYY-MM-DD inclusive; omit for no upper bound'),
+      }),
+    },
+  )
+
   const deleteEvent = tool(
     async ({ event_id }) => {
-      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
-      if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id.' })
-      await db.prepare('DELETE FROM events WHERE id = ?').run(event_id)
-      record(`🗑️ Removed “${ev.title}”`)
-      return JSON.stringify({ ok: true, id: event_id })
+      const result = await removeEventById(event_id)
+      if (!result.ok) return JSON.stringify(result)
+      record(`🗑️ Removed “${result.title}”`)
+      return JSON.stringify({ ok: true, id: event_id, title: result.title })
     },
     {
       name: 'delete_event',
-      description: 'Delete a single event by its id (get ids from get_schedule first). Do NOT re-create events to "clear" them.',
+      description: 'Delete a single event by its id. ALWAYS find_events first when the user names an event — never guess ids from get_schedule. Do NOT re-create events to "clear" them.',
       schema: z.object({ event_id: z.string() }),
     },
   )
@@ -297,6 +347,8 @@ export function buildTools(record) {
       const day = start_date || localDateStr()
       const startIso = all_day ? day : `${day}T${start_time || '09:00'}:00`
       const endIso = all_day ? day : (end_time ? `${day}T${end_time}:00` : addMinutes(startIso, duration_minutes || 60))
+
+      if (flagship) calendar = 'local'
 
       // Default: a NATIVE recurring event on the default Google calendar (Yahoo).
       // Google expands the occurrences — no per-instance looping. "local" keeps
@@ -390,18 +442,13 @@ export function buildTools(record) {
       if (from) { where.push('substr(start,1,10) >= ?'); params.push(from) }
       if (to) { where.push('substr(start,1,10) <= ?'); params.push(to) }
       if (!where.length) return JSON.stringify({ ok: false, message: 'Give a title query, a Google account, and/or a date range so I know what to delete.' })
+      if (query && query.trim().length < 2) return JSON.stringify({ ok: false, message: 'Title query is too short — use at least 2 characters, or find_events first to confirm targets.' })
       const clause = where.join(' AND ')
-      const rows = await db.prepare(`SELECT * FROM events WHERE ${clause}`).all(...params)
+      const rows = await db.prepare(`SELECT id, title FROM events WHERE ${clause}`).all(...params)
       if (!rows.length) return JSON.stringify({ ok: true, deleted: 0, message: 'No matching events found.' })
-      let googleRemoved = 0
-      for (const ev of rows) {
-        if (ev.source === 'google') {
-          try { await googleI.pushDelete(ev); googleRemoved++ } catch { /* keep going */ }
-        }
-      }
-      await db.prepare(`DELETE FROM events WHERE ${clause}`).run(...params)
+      for (const ev of rows) await removeEventById(ev.id)
       record(`🗑️ Deleted ${rows.length} event${rows.length === 1 ? '' : 's'}${query ? ` matching “${query}”` : ''}`)
-      return JSON.stringify({ ok: true, deleted: rows.length, google_removed: googleRemoved })
+      return JSON.stringify({ ok: true, deleted: rows.length })
     },
     {
       name: 'delete_events',
@@ -434,22 +481,28 @@ export function buildTools(record) {
 
   const rescheduleEvent = tool(
     async ({ event_id, start, end }) => {
-      const ev = await db.prepare('SELECT id, title FROM events WHERE id = ?').get(event_id)
+      const ev = await db.prepare('SELECT * FROM events WHERE id = ?').get(event_id)
       if (!ev) return JSON.stringify({ ok: false, message: 'No event with that id.' })
-      await db.prepare('UPDATE events SET start = ?, "end" = ?, updated_at = ? WHERE id = ?').run(start, end || start, now(), event_id)
+      const finish = end || start
+      if (ev.source === 'google') {
+        try { await googleI.pushUpdate(ev, { start, end: finish }) } catch (err) {
+          return JSON.stringify({ ok: false, message: `Couldn't move on Google: ${err.message}` })
+        }
+      }
+      await db.prepare('UPDATE events SET start = ?, "end" = ?, updated_at = ? WHERE id = ?').run(start, finish, now(), event_id)
       record(`🕑 Moved “${ev.title}”`)
-      return JSON.stringify({ ok: true, id: event_id, start, end: end || start })
+      return JSON.stringify({ ok: true, id: event_id, start, end: finish })
     },
     {
       name: 'reschedule_event',
-      description: 'Move an existing event to a new start/end (ids from get_schedule). Use this to move things — never delete + recreate.',
+      description: 'Move an existing event to a new start/end (ids from find_events). Use this to move things — never delete + recreate.',
       schema: z.object({ event_id: z.string(), start: z.string(), end: z.string().optional() }),
     },
   )
 
   return [
     // Schedule / calendar
-    getSchedule, findFreeSlot, scheduleEvent, scheduleRecurringEvent, updateEvent, deleteEvent, deleteEvents, deleteEventSeries, clearDay, rescheduleEvent,
+    getSchedule, findEventsTool, listFlagshipEvents, findFreeSlot, scheduleEvent, scheduleRecurringEvent, updateEvent, deleteEvent, deleteEvents, deleteEventSeries, clearDay, rescheduleEvent,
     // Tasks
     createTask, updateTask, completeTask, deleteTask, setTaskPriority, listTasks,
     // Everything else, by domain

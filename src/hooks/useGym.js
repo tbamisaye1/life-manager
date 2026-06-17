@@ -83,7 +83,12 @@ export function useUpdateExercise() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, ...body }) => api.patch(`/gym/exercises/${id}`, body),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['gym', 'exercises'] }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['gym', 'exercises'] })
+      client.invalidateQueries({ queryKey: ['gym', 'workout'] })
+      client.invalidateQueries({ queryKey: ['gym', 'history'] })
+      client.invalidateQueries({ queryKey: ['gym', 'today'] })
+    },
   })
 }
 

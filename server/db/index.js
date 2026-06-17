@@ -107,6 +107,7 @@ export async function initDb() {
   // Pages can be attached to tasks, projects, etc. (Notion-style nesting anywhere).
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_type TEXT')
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_id TEXT')
+  await client.exec('ALTER TABLE gym_exercises ADD COLUMN IF NOT EXISTS target_weight REAL')
   return client.label
 }
 

@@ -218,6 +218,7 @@ CREATE TABLE IF NOT EXISTS gym_exercises (
   rep_low       INTEGER NOT NULL DEFAULT 8,        -- target rep range
   rep_high      INTEGER NOT NULL DEFAULT 12,
   default_sets  INTEGER NOT NULL DEFAULT 3,
+  target_weight REAL,                                -- optional working-weight goal (kg/lb)
   increment     REAL NOT NULL DEFAULT 2.5,         -- weight step for progression
   notes         TEXT,
   archived      INTEGER NOT NULL DEFAULT 0,

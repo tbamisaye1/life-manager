@@ -49,5 +49,31 @@ export function buildPinsTools({ record }) {
     },
   )
 
-  return [createPin, listPins, deletePin]
+  const updatePin = tool(
+    async ({ text, new_body, color, pinned }) => {
+      const pin = await db.prepare('SELECT id, body FROM pins WHERE body ILIKE ? ORDER BY created_at DESC LIMIT 1').get(`%${text}%`)
+      if (!pin) return JSON.stringify({ ok: false, message: `No pin matching "${text}".` })
+      const sets = []
+      const p = { id: pin.id, ts: now() }
+      if (new_body !== undefined) { sets.push('body = @body'); p.body = new_body }
+      if (color !== undefined) { sets.push('color = @color'); p.color = color }
+      if (pinned !== undefined) { sets.push('pinned = @pinned'); p.pinned = pinned ? 1 : 0 }
+      if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
+      await db.prepare(`UPDATE pins SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
+      record(`✏️ Updated pin`)
+      return JSON.stringify({ ok: true, id: pin.id })
+    },
+    {
+      name: 'update_pin',
+      description: 'Edit a pinboard note found by text fragment: change body, colour, or pinned status.',
+      schema: z.object({
+        text: z.string().describe('fragment of existing pin text'),
+        new_body: z.string().optional(),
+        color: z.enum(['amber', 'blue', 'emerald', 'rose', 'violet', 'teal', 'orange', 'slate']).optional(),
+        pinned: z.boolean().optional(),
+      }),
+    },
+  )
+
+  return [createPin, listPins, updatePin, deletePin]
 }

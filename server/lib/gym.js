@@ -32,8 +32,11 @@ export async function suggestForExercise(exercise, beforeWorkoutId = null, targe
   const repNoun = exercise.unit === 'time' ? 'sec' : 'reps'
 
   if (!last || last.sets.length === 0) {
-    return { weight: null, reps: exercise.rep_low, sets, direction: 'new',
-      rationale: `First time — pick something you can control for the full ${exercise.rep_low}–${exercise.rep_high} ${repNoun}.`, last: null }
+    const startWeight = weighted && exercise.target_weight != null ? Number(exercise.target_weight) : null
+    return { weight: startWeight, reps: exercise.rep_low, sets, direction: 'new',
+      rationale: startWeight != null
+        ? `Target standard — ${sets}×${exercise.rep_low} @ ${startWeight}${exercise.unit}.`
+        : `First time — pick something you can control for the full ${exercise.rep_low}–${exercise.rep_high} ${repNoun}.`, last: null }
   }
 
   // Anchor to the WORKING weight = the most common weight across the sets, so a

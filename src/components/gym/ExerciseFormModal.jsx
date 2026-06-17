@@ -13,6 +13,7 @@ const DEFAULT_FORM = {
   rep_low: 8,
   rep_high: 12,
   default_sets: 3,
+  target_weight: '',
   increment: 2.5,
   notes: '',
 }
@@ -39,6 +40,7 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
       rep_low: Number(form.rep_low),
       rep_high: Number(form.rep_high),
       default_sets: Number(form.default_sets),
+      target_weight: form.target_weight === '' || form.target_weight == null ? null : Number(form.target_weight),
       increment: Number(form.increment),
     }
     if (exercise) {
@@ -107,7 +109,7 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
 
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <Label htmlFor="ex-rep-low">Rep low</Label>
+            <Label htmlFor="ex-rep-low">Target reps (min)</Label>
             <Input
               id="ex-rep-low"
               type="number"
@@ -117,7 +119,7 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
             />
           </div>
           <div>
-            <Label htmlFor="ex-rep-high">Rep high</Label>
+            <Label htmlFor="ex-rep-high">Target reps (max)</Label>
             <Input
               id="ex-rep-high"
               type="number"
@@ -127,7 +129,7 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
             />
           </div>
           <div>
-            <Label htmlFor="ex-sets">Default sets</Label>
+            <Label htmlFor="ex-sets">Target sets</Label>
             <Input
               id="ex-sets"
               type="number"
@@ -137,6 +139,21 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
             />
           </div>
         </div>
+
+        {(form.unit === 'kg' || form.unit === 'lb') && (
+          <div>
+            <Label htmlFor="ex-target-weight">Target weight ({form.unit})</Label>
+            <Input
+              id="ex-target-weight"
+              type="number"
+              min={0}
+              step={0.5}
+              value={form.target_weight ?? ''}
+              onChange={(e) => set('target_weight', e.target.value)}
+              placeholder="e.g. 20 — your working-weight goal"
+            />
+          </div>
+        )}
 
         <div>
           <Label htmlFor="ex-increment">Weight increment ({form.unit})</Label>
