@@ -7,6 +7,7 @@
 import { google } from 'googleapis'
 import { db } from '../db/index.js'
 import { newId, now } from '../lib/helpers.js'
+import { flagshipFromGoogleEvent } from '../lib/flagship.js'
 
 // Full calendar scope so we can list every calendar and (later) write to them.
 const SCOPES = [
@@ -213,15 +214,15 @@ async function syncAccountCalendars(email) {
       const start = isAllDay ? rawStart : instantToNaive(rawStart, tz)
       const end = isAllDay ? rawEnd : instantToNaive(rawEnd, tz)
       const allDay = isAllDay ? 1 : 0
-      const existing = await db.prepare("SELECT id FROM events WHERE source='google' AND external_id=?").get(e.id)
+      const existing = await db.prepare("SELECT id, flagship FROM events WHERE source='google' AND external_id=?").get(e.id)
+      const flagship = flagshipFromGoogleEvent(e.summary, existing?.flagship)
       if (existing) {
-        // flagship=0: Google events live on the daily schedule, not the month overview.
-        await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, flagship=0, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
-          .run({ id: existing.id, title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', email, cal: c.calendar_id, ts })
+        await db.prepare(`UPDATE events SET title=@title, start=@start, "end"=@end, all_day=@allDay, location=@location, notes=@notes, color=@color, flagship=@flagship, google_account=@email, google_calendar_id=@cal, updated_at=@ts WHERE id=@id`)
+          .run({ id: existing.id, title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', flagship, email, cal: c.calendar_id, ts })
       } else {
         await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,source,external_id,google_account,google_calendar_id,created_at,updated_at)
-          VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,0,'google',@ext,@email,@cal,@ts,@ts)`)
-          .run({ id: newId(), title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', ext: e.id, email, cal: c.calendar_id, ts })
+          VALUES (@id,@title,@start,@end,@allDay,@location,@notes,@color,@flagship,'google',@ext,@email,@cal,@ts,@ts)`)
+          .run({ id: newId(), title: e.summary || '(no title)', start, end, allDay, location: e.location || '', notes: e.description || '', color: c.color || 'blue', flagship, ext: e.id, email, cal: c.calendar_id, ts })
       }
       seen.push(e.id)
       n++
