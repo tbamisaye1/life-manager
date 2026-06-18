@@ -8,7 +8,7 @@ import { google } from 'googleapis'
 import { db } from '../db/index.js'
 import { newId, now } from '../lib/helpers.js'
 import { flagshipFromGoogleEvent } from '../lib/flagship.js'
-import { seriesKey } from '../lib/eventSeries.js'
+import { normalizeDateTime, seriesKey } from '../lib/eventSeries.js'
 
 // Full calendar scope so we can list every calendar and (later) write to them.
 const SCOPES = [
@@ -321,10 +321,19 @@ export async function resolveCalendarTarget(hint) {
 
 function timeParts(start, end, allDay, tz) {
   if (allDay) return { start: { date: String(start).slice(0, 10) }, end: { date: String(end || start).slice(0, 10) } }
+  const s = normalizeDateTime(start)
+  const e = normalizeDateTime(end || start)
   return {
-    start: { dateTime: start, timeZone: tz || undefined },
-    end: { dateTime: end || start, timeZone: tz || undefined },
+    start: { dateTime: s, timeZone: tz || undefined },
+    end: { dateTime: e, timeZone: tz || undefined },
   }
+}
+
+/** Keep the series master's anchor date; apply new wall-clock time from the edited row. */
+function applyTimeToAnchor(anchorIso, timeIso) {
+  const anchor = String(anchorIso || '').slice(0, 10)
+  const time = normalizeDateTime(timeIso).split('T')[1] || '00:00:00'
+  return `${anchor}T${time}`
 }
 
 async function calColor(email, calendarId) {
@@ -417,10 +426,19 @@ export async function pushUpdateSeriesMaster(event, patch) {
   if (patch.notes !== undefined) body.description = patch.notes
   if (patch.start !== undefined || patch.end !== undefined || patch.all_day !== undefined) {
     const allDay = (patch.all_day ?? event.all_day) ? true : false
-    const parts = timeParts(patch.start ?? event.start, patch.end ?? event.end, allDay, tz)
-    body.start = parts.start
-    body.end = parts.end
+    if (allDay) {
+      const parts = timeParts(patch.start ?? event.start, patch.end ?? event.end, true, tz)
+      body.start = parts.start
+      body.end = parts.end
+    } else {
+      const master = (await cal.events.get({ calendarId: event.google_calendar_id, eventId: sk.masterId })).data
+      const anchorStart = master.start?.dateTime || master.start?.date
+      const anchorEnd = master.end?.dateTime || master.end?.date
+      body.start = { dateTime: applyTimeToAnchor(anchorStart, patch.start ?? event.start), timeZone: tz }
+      body.end = { dateTime: applyTimeToAnchor(anchorEnd, patch.end ?? event.end), timeZone: tz }
+    }
   }
+  if (Object.keys(body).length === 0) return false
   await cal.events.patch({ calendarId: event.google_calendar_id, eventId: sk.masterId, requestBody: body })
   return true
 }

@@ -3,7 +3,7 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { expandRecurrence } from '../lib/recurrence.js'
-import { idsForScope, googleTimingFields, LOCAL_ONLY_FIELDS, RECUR_SCOPES } from '../lib/eventSeries.js'
+import { idsForScope, googleFieldsChanged, googlePatchFrom, normalizeDateTime, RECUR_SCOPES } from '../lib/eventSeries.js'
 import * as googleI from '../integrations/google.js'
 
 const router = Router()
@@ -105,17 +105,20 @@ router.patch('/:id', async (req, res) => {
   const existing = await db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id)
   if (!existing) return res.status(404).json(httpError('Event not found', 'NOT_FOUND'))
 
+  if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
+  if ('start' in patch) patch.start = normalizeDateTime(patch.start)
+  if ('end' in patch) patch.end = normalizeDateTime(patch.end ?? patch.start)
+
   const targetIds = await idsForScope(db, existing, scope)
-  const touchesGoogleTiming = googleTimingFields(patch)
-  const localOnly = !touchesGoogleTiming || [...Object.keys(patch)].every((k) => LOCAL_ONLY_FIELDS.has(k))
+  const googlePatch = googlePatchFrom(existing, patch)
 
   // Google write-back: one instance, or the series master for "all".
-  if (existing.source === 'google' && !localOnly) {
+  if (existing.source === 'google' && googleFieldsChanged(existing, patch)) {
     try {
       if (scope === 'one') {
-        await googleI.pushUpdate(existing, patch)
+        await googleI.pushUpdate(existing, googlePatch)
       } else if (scope === 'all') {
-        await googleI.pushUpdateSeriesMaster(existing, patch)
+        await googleI.pushUpdateSeriesMaster(existing, googlePatch)
       }
       // "following" timing changes stay local-only until we split the Google series.
     } catch (err) {
@@ -123,7 +126,6 @@ router.patch('/:id', async (req, res) => {
     }
   }
 
-  if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
   if ('flagship' in patch) {
     patch.flagship = patch.flagship ? 1 : 0
     if (scope === 'one' || scope === 'following') patch.flagship_override = 1
