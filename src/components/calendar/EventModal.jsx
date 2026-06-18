@@ -96,7 +96,9 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     repeat: 'none',
     weekdays: [],
   })
-  const [scopeModal, setScopeModal] = useState(null) // { action: 'save'|'delete', payload }
+  const [scopeModal, setScopeModal] = useState(null) // { action: 'save'|'delete' }
+  const [scopePending, setScopePending] = useState(false)
+  const [scopeError, setScopeError] = useState(null)
   const { data: projectList = [] } = projectsResource.useList()
   const create = eventsResource.useCreate()
   const update = eventsResource.useUpdate()
@@ -163,28 +165,37 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
   })
 
   const saveWithScope = async (scope) => {
-    const payload = { ...buildPayload(), scope }
-    if (isEditing) {
-      await update.mutateAsync({ id: event.id, ...payload })
-    } else if (isGoogleTarget) {
-      await createGoogle.mutateAsync({ ...buildPayload(), email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
-    } else if (isRepeating) {
-      await createLocalRecurring.mutateAsync({
-        title: payload.title, all_day: payload.all_day, location: payload.location, notes: payload.notes,
-        color: payload.color, flagship: payload.flagship, start_date: draft.start.slice(0, 10),
-        start_time: draft.all_day ? undefined : draft.start.slice(11, 16),
-        end_time: draft.all_day ? undefined : (draft.end || draft.start).slice(11, 16),
-        ...recurrenceFields(),
-      })
-    } else {
-      await create.mutateAsync(buildPayload())
+    setScopePending(true)
+    setScopeError(null)
+    try {
+      const payload = { ...buildPayload(), scope }
+      if (isEditing) {
+        await update.mutateAsync({ id: event.id, ...payload })
+      } else if (isGoogleTarget) {
+        await createGoogle.mutateAsync({ ...buildPayload(), email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
+      } else if (isRepeating) {
+        await createLocalRecurring.mutateAsync({
+          title: payload.title, all_day: payload.all_day, location: payload.location, notes: payload.notes,
+          color: payload.color, flagship: payload.flagship, start_date: draft.start.slice(0, 10),
+          start_time: draft.all_day ? undefined : draft.start.slice(11, 16),
+          end_time: draft.all_day ? undefined : (draft.end || draft.start).slice(11, 16),
+          ...recurrenceFields(),
+        })
+      } else {
+        await create.mutateAsync(buildPayload())
+      }
+      setScopeModal(null)
+      onClose()
+    } catch (err) {
+      setScopeError(err.message || 'Could not save event')
+    } finally {
+      setScopePending(false)
     }
-    setScopeModal(null)
-    onClose()
   }
 
   const save = () => {
     if (isEditing && isRecurringEvent(event)) {
+      setScopeError(null)
       setScopeModal({ action: 'save' })
       return
     }
@@ -192,19 +203,34 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
   }
 
   const delWithScope = async (scope) => {
-    await api.del(`/events/${event.id}?scope=${scope}`)
-    queryClient.invalidateQueries({ queryKey: ['events'] })
-    queryClient.invalidateQueries({ queryKey: ['today'] })
-    setScopeModal(null)
-    onClose()
+    setScopePending(true)
+    setScopeError(null)
+    try {
+      await api.del(`/events/${event.id}?scope=${scope}`)
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['today'] })
+      setScopeModal(null)
+      onClose()
+    } catch (err) {
+      setScopeError(err.message || 'Could not delete event')
+    } finally {
+      setScopePending(false)
+    }
   }
 
   const del = () => {
     if (isRecurringEvent(event)) {
+      setScopeError(null)
       setScopeModal({ action: 'delete' })
       return
     }
     remove.mutateAsync(event.id).then(onClose)
+  }
+
+  const closeScopeModal = () => {
+    if (scopePending) return
+    setScopeModal(null)
+    setScopeError(null)
   }
 
   const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending || createLocalRecurring.isPending
@@ -213,7 +239,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
   return (
     <>
     <Modal
-      open={open}
+      open={open && !scopeModal}
       onClose={onClose}
       title={isEditing ? 'Edit Event' : 'New Event'}
       footer={
@@ -390,10 +416,13 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     </Modal>
 
     <RecurringScopeModal
+      key={scopeModal?.action ?? 'scope'}
       open={!!scopeModal}
       title={scopeModal?.action === 'delete' ? `Delete “${event?.title}”` : `Save “${event?.title}”`}
       action={scopeModal?.action}
-      onClose={() => setScopeModal(null)}
+      pending={scopePending}
+      error={scopeError}
+      onClose={closeScopeModal}
       onChoose={(scope) => (scopeModal?.action === 'delete' ? delWithScope(scope) : saveWithScope(scope))}
     />
     </>
