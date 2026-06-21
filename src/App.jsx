@@ -17,6 +17,7 @@ import GymWorkoutPage from './pages/GymWorkoutPage'
 import EmailPage from './pages/EmailPage'
 import RepliesPage from './pages/RepliesPage'
 import NotesPage from './pages/NotesPage'
+import PinboardPage from './pages/PinboardPage'
 import SettingsPage from './pages/SettingsPage'
 import NotFoundPage from './pages/NotFoundPage'
 
@@ -43,6 +44,7 @@ function App() {
         <Route path="/replies" element={<RepliesPage />} />
         <Route path="/notes" element={<NotesPage />} />
         <Route path="/notes/:id" element={<NotesPage />} />
+        <Route path="/pins" element={<PinboardPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

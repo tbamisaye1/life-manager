@@ -1,6 +1,6 @@
 import { app, ensureInit } from './app.js'
 
-const PORT = process.env.PORT || 4000
+const PORT = process.env.LM_API_PORT || process.env.PORT || 4000
 
 // Local dev server. (On Vercel, api/index.js imports the app instead.)
 ensureInit().then((label) => {

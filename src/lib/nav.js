@@ -1,6 +1,6 @@
 import {
   Sun, Bot, CalendarClock, CheckSquare, Calendar, ListChecks, Sparkles, TrendingUp,
-  FolderKanban, Mail, StickyNote, MessageSquare, Dumbbell, Trophy, Settings,
+  FolderKanban, Mail, StickyNote, MessageSquare, Dumbbell, Trophy, Settings, Pin,
 } from 'lucide-react'
 
 // Single source of truth for primary navigation. Sidebar renders from this,
@@ -15,6 +15,7 @@ export const NAV_SECTIONS = [
       { path: '/calendar', label: 'Calendar', icon: Calendar },
       { path: '/tasks', label: 'Tasks', icon: CheckSquare },
       { path: '/notes', label: 'Notes & Ideas', icon: StickyNote },
+      { path: '/pins', label: 'Pinboard', icon: Pin },
       { path: '/priorities', label: 'Daily Priorities', icon: ListChecks },
     ],
   },

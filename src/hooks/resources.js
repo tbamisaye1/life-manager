@@ -14,6 +14,7 @@ export const replyQueue = createResource('reply-queue', '/reply-queue', ['today'
 export const favorites = createResource('favorites', '/favorites')
 // The curated "I'm Bored" list — fully user-editable.
 export const boredItems = createResource('bored-items', '/bored-items')
+export const pins = createResource('pins', '/pins')
 
 // --- Priorities: standard CRUD + a "check off for this period" action ---
 export const priorities = createResource('priorities', '/priorities', ['today'])

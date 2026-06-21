@@ -27,7 +27,9 @@ async function getClient() {
       }
     }
     const { PGlite } = await import('@electric-sql/pglite')
-    const pglite = new PGlite(join(__dirname, 'life-manager.pglite'))
+    const slot = process.env.LM_DB_SLOT || ''
+    const dir = slot ? `life-manager-slot-${slot}.pglite` : 'life-manager.pglite'
+    const pglite = new PGlite(join(__dirname, dir))
     await pglite.waitReady
     return {
       query: (text, values) => pglite.query(text, values),
