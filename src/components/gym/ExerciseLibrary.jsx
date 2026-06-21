@@ -75,7 +75,7 @@ export function ExerciseLibrary() {
       )}
 
       <ExerciseFormModal
-        key={editing?.id ?? 'new'}
+        key={`${modalOpen ? 'open' : 'closed'}-${editing?.id ?? 'new'}`}
         open={modalOpen}
         onClose={closeModal}
         exercise={editing}

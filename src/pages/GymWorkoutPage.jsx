@@ -3,59 +3,89 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Dumbbell, ArrowLeft, CheckCircle, Plus } from 'lucide-react'
 import { PageHeader, Button, Card, CardBody, EmptyState, Loading, ErrorState, Modal, Select, Label } from '../components/ui'
 import { ExerciseLogCard } from '../components/gym/ExerciseLogCard'
+import { ExerciseFormModal } from '../components/gym/ExerciseFormModal'
 import { useWorkout, useUpdateWorkout, useAddSet, useExercises } from '../hooks/useGym'
 import { formatDate } from '../lib/format'
 
 /**
  * Modal to add an ad-hoc exercise to an open workout.
- * Posts a first set (weight=null, reps from rep_low) which creates the exercise
- * entry on the workout. The user can then adjust via SetRow.
+ * Can pick from the library or create a new exercise inline.
  */
 function AddExerciseModal({ open, onClose, workoutId, existingExerciseIds = [] }) {
   const [selectedId, setSelectedId] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
   const { data: exercises = [] } = useExercises()
   const addSet = useAddSet()
 
   const available = exercises.filter((ex) => !ex.archived && !existingExerciseIds.includes(ex.id))
 
-  const handleAdd = () => {
-    if (!selectedId) return
-    const ex = exercises.find((e) => e.id === selectedId)
+  const handleClose = () => {
+    setSelectedId('')
+    setCreateOpen(false)
+    onClose()
+  }
+
+  const addExercise = (exerciseId, repLow) => {
     addSet.mutate(
       {
         workoutId,
-        exercise_id: selectedId,
+        exercise_id: exerciseId,
         weight: null,
-        reps: ex?.rep_low ?? 8,
+        reps: repLow ?? exercises.find((e) => e.id === exerciseId)?.rep_low ?? 8,
       },
-      { onSuccess: () => onClose() },
+      { onSuccess: handleClose },
     )
   }
 
+  const handleAdd = () => {
+    if (!selectedId) return
+    addExercise(selectedId)
+  }
+
+  const handleCreated = (created) => {
+    setCreateOpen(false)
+    addExercise(created.id, created.rep_low)
+  }
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add exercise"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleAdd} disabled={!selectedId || addSet.isPending}>
-            Add
+    <>
+      <Modal
+        open={open && !createOpen}
+        onClose={handleClose}
+        title="Add exercise"
+        footer={
+          <>
+            <Button variant="ghost" onClick={handleClose}>Cancel</Button>
+            <Button variant="primary" onClick={handleAdd} disabled={!selectedId || addSet.isPending}>
+              Add
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="add-ex-select">Exercise</Label>
+            <Select id="add-ex-select" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+              <option value="">— Select —</option>
+              {available.map((ex) => (
+                <option key={ex.id} value={ex.id}>{ex.name}</option>
+              ))}
+            </Select>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => setCreateOpen(true)} className="w-full">
+            <Plus className="h-4 w-4" /> Create new exercise
           </Button>
-        </>
-      }
-    >
-      <div>
-        <Label htmlFor="add-ex-select">Exercise</Label>
-        <Select id="add-ex-select" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-          <option value="">— Select —</option>
-          {available.map((ex) => (
-            <option key={ex.id} value={ex.id}>{ex.name}</option>
-          ))}
-        </Select>
-      </div>
-    </Modal>
+        </div>
+      </Modal>
+
+      <ExerciseFormModal
+        key={createOpen ? 'create-open' : 'create-closed'}
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        exercise={null}
+        onCreated={handleCreated}
+      />
+    </>
   )
 }
 

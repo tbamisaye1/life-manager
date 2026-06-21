@@ -22,35 +22,50 @@ function buildForm(exercise) {
   return exercise ? { ...DEFAULT_FORM, ...exercise } : DEFAULT_FORM
 }
 
-/** Modal for creating or editing an exercise in the library.
- *  The caller must pass a key (e.g. exercise?.id ?? 'new') so React remounts
- *  when switching between create/edit, resetting form state naturally.
- */
-export function ExerciseFormModal({ open, onClose, exercise }) {
+/** Modal for creating or editing an exercise in the library. */
+export function ExerciseFormModal({ open, onClose, exercise, onCreated }) {
   const [form, setForm] = useState(() => buildForm(exercise))
+  const [error, setError] = useState(null)
   const create = useCreateExercise()
   const update = useUpdateExercise()
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
 
   const handleSubmit = (e) => {
-    e.preventDefault()
+    e?.preventDefault()
+    const name = form.name.trim()
+    if (!name) {
+      setError('Name is required')
+      return
+    }
+    setError(null)
     const payload = {
       ...form,
+      name,
+      muscle_group: form.muscle_group.trim(),
+      notes: form.notes.trim(),
       rep_low: Number(form.rep_low),
       rep_high: Number(form.rep_high),
       default_sets: Number(form.default_sets),
       target_weight: form.target_weight === '' || form.target_weight == null ? null : Number(form.target_weight),
-      increment: Number(form.increment),
+      increment: Number(form.increment) || 2.5,
+    }
+    const opts = {
+      onSuccess: (data) => {
+        if (!exercise && onCreated) onCreated(data)
+        else onClose()
+      },
+      onError: (err) => setError(err.message || 'Could not save exercise'),
     }
     if (exercise) {
-      update.mutate({ id: exercise.id, ...payload }, { onSuccess: onClose })
+      update.mutate({ id: exercise.id, ...payload }, opts)
     } else {
-      create.mutate(payload, { onSuccess: onClose })
+      create.mutate(payload, opts)
     }
   }
 
   const pending = create.isPending || update.isPending
+  const canSave = !!form.name.trim()
 
   return (
     <Modal
@@ -60,13 +75,19 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
-          <Button variant="primary" type="submit" form="exercise-form" disabled={pending}>
+          <Button variant="primary" onClick={handleSubmit} disabled={pending || !canSave}>
             {exercise ? 'Save changes' : 'Add exercise'}
           </Button>
         </>
       }
     >
-      <form id="exercise-form" onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {error}
+          </p>
+        )}
+
         <div>
           <Label htmlFor="ex-name">Name</Label>
           <Input
@@ -74,7 +95,7 @@ export function ExerciseFormModal({ open, onClose, exercise }) {
             value={form.name}
             onChange={(e) => set('name', e.target.value)}
             placeholder="e.g. Bench Press"
-            required
+            autoFocus
           />
         </div>
 

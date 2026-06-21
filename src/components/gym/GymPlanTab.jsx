@@ -12,12 +12,24 @@ const EMOJI_OPTIONS = ['💪', '🏋️', '🤸', '🦵', '🏃', '🧘', '⚡',
 
 function NewRoutineModal({ open, onClose }) {
   const [form, setForm] = useState({ name: '', emoji: '💪', color: 'violet', weekday: '', notes: '' })
+  const [error, setError] = useState(null)
   const create = useCreateRoutine()
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
   const handleSubmit = (e) => {
-    e.preventDefault()
-    create.mutate({ ...form, weekday: form.weekday !== '' ? Number(form.weekday) : null }, { onSuccess: onClose })
+    e?.preventDefault()
+    if (!form.name.trim()) {
+      setError('Name is required')
+      return
+    }
+    setError(null)
+    create.mutate(
+      { ...form, weekday: form.weekday !== '' ? Number(form.weekday) : null },
+      {
+        onSuccess: onClose,
+        onError: (err) => setError(err.message || 'Could not create routine'),
+      },
+    )
   }
 
   return (
@@ -27,12 +39,19 @@ function NewRoutineModal({ open, onClose }) {
       title="New routine"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit" form="new-routine-form" disabled={create.isPending}>Create</Button>
+          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>Cancel</Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={create.isPending || !form.name.trim()}>
+            Create
+          </Button>
         </>
       }
     >
-      <form id="new-routine-form" onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {error}
+          </p>
+        )}
         <div>
           <Label htmlFor="routine-name">Name</Label>
           <Input id="routine-name" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Upper Body" required />
@@ -116,7 +135,7 @@ export function GymPlanTab() {
         </div>
       )}
 
-      <NewRoutineModal open={newOpen} onClose={() => setNewOpen(false)} />
+      <NewRoutineModal key={newOpen ? 'open' : 'closed'} open={newOpen} onClose={() => setNewOpen(false)} />
     </div>
   )
 }
