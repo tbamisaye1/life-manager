@@ -3,7 +3,8 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { expandRecurrence } from '../lib/recurrence.js'
-import { idsForScope, googleFieldsChanged, googlePatchFrom, normalizeDateTime, RECUR_SCOPES } from '../lib/eventSeries.js'
+import { idsForScope, googleFieldsChanged, googlePatchFrom, normalizeDateTime, patchForBatchScope, RECUR_SCOPES } from '../lib/eventSeries.js'
+import { normalizeEventEnd } from '../lib/eventTimes.js'
 import * as googleI from '../integrations/google.js'
 
 const router = Router()
@@ -40,9 +41,10 @@ router.post('/', async (req, res) => {
   if (!title?.trim() || !start) return res.status(400).json(httpError('title and start are required', 'VALIDATION'))
   const ts = now()
   const id = newId()
+  const end = req.body.all_day ? (req.body.end || start) : normalizeEventEnd(start, req.body.end || start)
   await db.prepare(`INSERT INTO events (id,title,start,"end",all_day,location,notes,color,flagship,project_id,source,created_at,updated_at)
     VALUES (@id,@title,@start,@end,@all_day,@location,@notes,@color,@flagship,@project_id,'local',@ts,@ts)`).run({
-    id, title: title.trim(), start, end: req.body.end || start,
+    id, title: title.trim(), start, end,
     all_day: req.body.all_day ? 1 : 0, location: req.body.location || '',
     notes: req.body.notes || '', color: req.body.color || 'slate',
     flagship: req.body.flagship === false || req.body.flagship === 0 ? 0 : 1,
@@ -108,12 +110,16 @@ router.patch('/:id', async (req, res) => {
   if ('all_day' in patch) patch.all_day = patch.all_day ? 1 : 0
   if ('start' in patch) patch.start = normalizeDateTime(patch.start)
   if ('end' in patch) patch.end = normalizeDateTime(patch.end ?? patch.start)
+  if ('start' in patch && 'end' in patch && !patch.all_day) {
+    patch.end = normalizeEventEnd(patch.start, patch.end)
+  }
 
   const targetIds = await idsForScope(db, existing, scope)
-  const googlePatch = googlePatchFrom(existing, patch)
+  const finalPatch = patchForBatchScope(existing, patch, targetIds)
+  const googlePatch = googlePatchFrom(existing, finalPatch)
 
   // Google write-back: one instance, or the series master for "all".
-  if (existing.source === 'google' && googleFieldsChanged(existing, patch)) {
+  if (existing.source === 'google' && googleFieldsChanged(existing, finalPatch)) {
     try {
       if (scope === 'one') {
         await googleI.pushUpdate(existing, googlePatch)
@@ -126,13 +132,13 @@ router.patch('/:id', async (req, res) => {
     }
   }
 
-  if ('flagship' in patch) {
-    patch.flagship = patch.flagship ? 1 : 0
-    if (scope === 'one' || scope === 'following') patch.flagship_override = 1
+  if ('flagship' in finalPatch) {
+    finalPatch.flagship = finalPatch.flagship ? 1 : 0
+    finalPatch.flagship_override = 1
   }
 
   for (const id of targetIds) {
-    const upd = buildUpdate('events', id, patch, ALLOWED)
+    const upd = buildUpdate('events', id, finalPatch, ALLOWED)
     if (upd) await db.prepare(upd.sql).run(upd.params)
   }
 

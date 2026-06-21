@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as googleI from '../integrations/google.js'
+import { normalizeEventEnd } from '../lib/eventTimes.js'
 import * as notionI from '../integrations/notion.js'
 import { asyncRoute, httpError } from '../lib/http.js'
 
@@ -64,6 +65,8 @@ router.patch('/google/accounts/:email', asyncRoute(async (req, res) => {
 router.post('/google/events', asyncRoute(async (req, res) => {
   const b = req.body || {}
   if (!b.title?.trim() || !b.start) return res.status(400).json(httpError('title and start are required', 'VALIDATION'))
+  const start = b.start
+  const end = b.all_day ? (b.end || start) : normalizeEventEnd(start, b.end || start)
   let { email, calendar_id: calendarId } = b
   if (!email || !calendarId) {
     const t = await googleI.defaultTarget()
@@ -74,13 +77,13 @@ router.post('/google/events', asyncRoute(async (req, res) => {
   const recurring = b.frequency || (Array.isArray(b.weekdays) && b.weekdays.length) || b.until || b.count
   if (recurring) {
     const r = await googleI.createRecurringEvent({
-      email, calendarId, title: b.title.trim(), start: b.start, end: b.end, allDay: !!b.all_day,
+      email, calendarId, title: b.title.trim(), start, end, allDay: !!b.all_day,
       location: b.location, notes: b.notes, frequency: b.frequency, weekdays: b.weekdays, until: b.until, count: b.count,
     })
     return res.status(201).json({ ok: true, recurring: true, ...r })
   }
   const event = await googleI.createEvent({
-    email, calendarId, title: b.title.trim(), start: b.start, end: b.end,
+    email, calendarId, title: b.title.trim(), start, end,
     allDay: !!b.all_day, location: b.location, notes: b.notes, flagship: b.flagship,
   })
   res.status(201).json(event)

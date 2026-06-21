@@ -45,6 +45,24 @@ export function googleFieldsChanged(existing, patch) {
   return GOOGLE_FIELDS.some((k) => (k in patch) && !fieldEq(existing, patch, k))
 }
 
+/** True when start/end/all_day actually changed in this save. */
+export function timingFieldsChanged(existing, patch) {
+  return ['start', 'end', 'all_day'].some((k) => (k in patch) && !fieldEq(existing, patch, k))
+}
+
+/**
+ * Batch scope updates must not copy one occurrence's absolute start/end onto every
+ * row unless timing genuinely changed — otherwise toggling flagship (or color)
+ * collapses a recurring series onto a single day.
+ */
+export function patchForBatchScope(existing, patch, targetIds) {
+  if (targetIds.length <= 1 || timingFieldsChanged(existing, patch)) return patch
+  const out = { ...patch }
+  delete out.start
+  delete out.end
+  return out
+}
+
 /** Google patch body — only changed fields, datetimes normalised. */
 export function googlePatchFrom(existing, patch) {
   const out = {}

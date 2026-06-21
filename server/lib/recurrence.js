@@ -2,6 +2,8 @@
 // /events/recurring HTTP route and the assistant's schedule_recurring_event tool
 // so the logic stays in one place. Everything is local wall-clock time.
 
+import { buildTimedRange } from './eventTimes.js'
+
 const pad = (n) => String(n).padStart(2, '0')
 const dateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
@@ -60,9 +62,10 @@ export function expandRecurrence(spec) {
       if (allDay) {
         out.push({ start: ds, end: ds })
       } else {
-        const s = `${ds}T${startTime}:00`
-        const e = endTime ? `${ds}T${endTime}:00` : addMinutesToClock(ds, startTime, durationMinutes)
-        out.push({ start: s, end: e })
+        const range = endTime
+          ? buildTimedRange(ds, startTime, endTime)
+          : { start: `${ds}T${startTime}:00`, end: addMinutesToClock(ds, startTime, durationMinutes) }
+        out.push(range)
       }
     }
     cur.setDate(cur.getDate() + 1)
