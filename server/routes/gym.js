@@ -111,6 +111,44 @@ router.delete('/routines/:id/exercises/:rexId', async (req, res) => {
   res.json(routine ? await routineWithExercises(routine) : { ok: true })
 })
 
+/** Build a routine template from a logged workout's exercises. */
+router.post('/routines/from-workout/:workoutId', async (req, res) => {
+  const workout = await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(req.params.workoutId)
+  if (!workout) return res.status(404).json(httpError('Workout not found', 'NOT_FOUND'))
+
+  const rows = await db.prepare(`
+    SELECT s.exercise_id, COUNT(*) AS set_count
+    FROM gym_sets s
+    WHERE s.workout_id = ?
+    GROUP BY s.exercise_id
+    ORDER BY MIN(s.set_number)`).all(req.params.workoutId)
+  if (!rows.length) return res.status(400).json(httpError('Workout has no logged exercises', 'VALIDATION'))
+
+  const ts = now()
+  const id = newId()
+  const name = (req.body.name || workout.title || 'Workout').trim()
+  await db.prepare(`INSERT INTO gym_routines (id,name,emoji,color,weekday,notes,sort_order,created_at,updated_at)
+    VALUES (@id,@name,@emoji,@color,@weekday,@notes,0,@ts,@ts)`).run({
+    id,
+    name,
+    emoji: req.body.emoji || '🏋️',
+    color: req.body.color || 'violet',
+    weekday: req.body.weekday ?? null,
+    notes: req.body.notes || workout.notes || '',
+    ts,
+  })
+
+  for (let i = 0; i < rows.length; i++) {
+    const ex = await db.prepare('SELECT default_sets FROM gym_exercises WHERE id = ?').get(rows[i].exercise_id)
+    const targetSets = rows[i].set_count || ex?.default_sets || 3
+    await db.prepare('INSERT INTO gym_routine_exercises (id,routine_id,exercise_id,target_sets,sort_order) VALUES (?,?,?,?,?)')
+      .run(newId(), id, rows[i].exercise_id, targetSets, i)
+  }
+
+  const routine = await db.prepare('SELECT * FROM gym_routines WHERE id = ?').get(id)
+  res.status(201).json(await routineWithExercises(routine))
+})
+
 // ---------------- Schedule + Today ----------------
 router.get('/schedule', async (req, res) => {
   const routines = await db.prepare('SELECT id,name,emoji,color,weekday FROM gym_routines WHERE weekday IS NOT NULL ORDER BY weekday').all()
