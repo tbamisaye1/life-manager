@@ -5,6 +5,7 @@ import { newId, now, localDateStr } from '../helpers.js'
 import { firstFreeSlot, addMinutes, resolveProjectId, findEvents, removeEventById } from './tools-shared.js'
 import { expandRecurrence } from '../recurrence.js'
 import * as googleI from '../../integrations/google.js'
+import * as microsoftI from '../../integrations/microsoft.js'
 import { buildGymTools } from './tools-gym.js'
 import { buildNotesTools } from './tools-notes.js'
 import { buildRugbyTools } from './tools-rugby.js'
@@ -62,12 +63,21 @@ export function buildTools(record) {
       // Month-calendar (flagship) events must stay app-local — Google sync clears flagship.
       if (flagship) calendar = 'local'
 
-      // Default: put it on the default Google calendar (Yahoo) — which also
-      // shows in the app's daily schedule. Only stay app-local if asked.
+      // Default: Google calendar if connected, else Microsoft, else local.
       if (!isLocalOnly(calendar)) {
         let target = null
-        try { target = await googleI.resolveCalendarTarget(calendar) } catch { /* fall through */ }
-        if (target) {
+        let provider = null
+        try {
+          target = await googleI.resolveCalendarTarget(calendar)
+          if (target) provider = 'google'
+        } catch { /* fall through */ }
+        if (!target) {
+          try {
+            target = await microsoftI.resolveCalendarTarget(calendar)
+            if (target) provider = 'microsoft'
+          } catch { /* fall through */ }
+        }
+        if (target && provider === 'google') {
           const ev = await googleI.createEvent({
             email: target.email, calendarId: target.calendarId, title,
             start, end: finish, allDay: !!all_day, location, notes,
@@ -75,9 +85,15 @@ export function buildTools(record) {
           record(`📅 Scheduled “${title}” on ${target.email}`)
           return JSON.stringify({ ok: true, id: ev.id, calendar: target.email, start, end: finish })
         }
-        // calendar named but not found
-        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try yahoo, yale, rotunda, or say "local".` })
-        // else: no Google connected → fall through to a local event
+        if (target && provider === 'microsoft') {
+          const ev = await microsoftI.createEvent({
+            email: target.email, calendarId: target.calendarId, title,
+            start, end: finish, allDay: !!all_day, location, notes,
+          })
+          record(`📅 Scheduled “${title}” on ${target.email}`)
+          return JSON.stringify({ ok: true, id: ev.id, calendar: target.email, start, end: finish })
+        }
+        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try a Google/Outlook calendar name, or say "local".` })
       }
 
       const ts = now()
@@ -130,6 +146,11 @@ export function buildTools(record) {
       if (ev.source === 'google') {
         try { await googleI.pushUpdate(ev, patch) } catch (err) {
           return JSON.stringify({ ok: false, message: `Couldn't update on Google: ${err.message}` })
+        }
+      }
+      if (ev.source === 'microsoft') {
+        try { await microsoftI.pushUpdate(ev, patch) } catch (err) {
+          return JSON.stringify({ ok: false, message: `Couldn't update on Outlook: ${err.message}` })
         }
       }
       const sets = []
@@ -350,13 +371,20 @@ export function buildTools(record) {
 
       if (flagship) calendar = 'local'
 
-      // Default: a NATIVE recurring event on the default Google calendar (Yahoo).
-      // Google expands the occurrences — no per-instance looping. "local" keeps
-      // it as individual app-only events.
       if (!isLocalOnly(calendar)) {
         let target = null
-        try { target = await googleI.resolveCalendarTarget(calendar) } catch { /* fall through */ }
-        if (target) {
+        let provider = null
+        try {
+          target = await googleI.resolveCalendarTarget(calendar)
+          if (target) provider = 'google'
+        } catch { /* fall through */ }
+        if (!target) {
+          try {
+            target = await microsoftI.resolveCalendarTarget(calendar)
+            if (target) provider = 'microsoft'
+          } catch { /* fall through */ }
+        }
+        if (target && provider === 'google') {
           const r = await googleI.createRecurringEvent({
             email: target.email, calendarId: target.calendarId, title,
             start: startIso, end: endIso, allDay: !!all_day, location, notes,
@@ -365,8 +393,16 @@ export function buildTools(record) {
           record(`📅 Scheduled recurring “${title}” on ${target.email}`)
           return JSON.stringify({ ok: true, recurring: true, calendar: target.email, recurringEventId: r.recurringEventId })
         }
-        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try yahoo, yale, rotunda, or say "local".` })
-        // no Google connected → fall through to local expansion
+        if (target && provider === 'microsoft') {
+          const r = await microsoftI.createRecurringEvent({
+            email: target.email, calendarId: target.calendarId, title,
+            start: startIso, end: endIso, allDay: !!all_day, location, notes,
+            frequency, weekdays, until: until_date, count: occurrences,
+          })
+          record(`📅 Scheduled recurring “${title}” on ${target.email}`)
+          return JSON.stringify({ ok: true, recurring: true, calendar: target.email, recurringEventId: r.recurringEventId })
+        }
+        if (calendar) return JSON.stringify({ ok: false, message: `No connected calendar matching “${calendar}”. Try a Google/Outlook calendar name, or say "local".` })
       }
 
       const occ = expandRecurrence({
@@ -487,6 +523,11 @@ export function buildTools(record) {
       if (ev.source === 'google') {
         try { await googleI.pushUpdate(ev, { start, end: finish }) } catch (err) {
           return JSON.stringify({ ok: false, message: `Couldn't move on Google: ${err.message}` })
+        }
+      }
+      if (ev.source === 'microsoft') {
+        try { await microsoftI.pushUpdate(ev, { start, end: finish }) } catch (err) {
+          return JSON.stringify({ ok: false, message: `Couldn't move on Outlook: ${err.message}` })
         }
       }
       await db.prepare('UPDATE events SET start = ?, "end" = ?, updated_at = ? WHERE id = ?').run(start, finish, now(), event_id)

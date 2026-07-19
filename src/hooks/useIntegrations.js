@@ -59,15 +59,55 @@ export function useGoogleCalendarActions() {
   return { toggleCalendar, setDefault, disconnectAccount, sync }
 }
 
-// Quietly pull the latest Google events when a calendar view mounts or the
-// window regains focus — throttled so we don't hammer the API. Pass the page's
-// own `sync` mutation so its button spinner reflects auto-syncs too.
-// Module-level timestamp shared across pages so navigating between Schedule and
-// Calendar doesn't re-sync within the throttle window.
+// ─── Microsoft / Outlook: multiple accounts + calendars ─────────────────────────
+
+export const useMicrosoftAccounts = () =>
+  useQuery({ queryKey: ['microsoft', 'accounts'], queryFn: () => api.get('/integrations/microsoft/accounts') })
+
+export const useMicrosoftCalendars = () =>
+  useQuery({ queryKey: ['microsoft', 'calendars'], queryFn: () => api.get('/integrations/microsoft/calendars') })
+
+function refreshMicrosoft(client) {
+  client.invalidateQueries({ queryKey: ['microsoft'] })
+  client.invalidateQueries({ queryKey: ['integrations'] })
+  client.invalidateQueries({ queryKey: ['events'] })
+}
+
+export function useMicrosoftCalendarActions() {
+  const client = useQueryClient()
+  const toggleCalendar = useMutation({
+    mutationFn: ({ id, selected }) => api.post(`/integrations/microsoft/calendars/${encodeURIComponent(id)}/selected`, { selected }),
+    onSuccess: () => refreshMicrosoft(client),
+  })
+  const setDefault = useMutation({
+    mutationFn: (email) => api.post(`/integrations/microsoft/accounts/${encodeURIComponent(email)}/default`, {}),
+    onSuccess: () => refreshMicrosoft(client),
+  })
+  const disconnectAccount = useMutation({
+    mutationFn: (email) => api.del(`/integrations/microsoft/accounts/${encodeURIComponent(email)}`),
+    onSuccess: () => refreshMicrosoft(client),
+  })
+  const sync = useMutation({
+    mutationFn: () => api.post('/integrations/microsoft/sync', {}),
+    onSuccess: () => refreshMicrosoft(client),
+  })
+  return { toggleCalendar, setDefault, disconnectAccount, sync }
+}
+
+// Quietly pull the latest calendar events when a view mounts or the window
+// regains focus — throttled so we don't hammer the API.
 const AUTO_SYNC_THROTTLE_MS = 2 * 60 * 1000
 let lastAutoSyncAt = 0
 
 export function useGoogleAutoSync(enabled, syncMutation) {
+  useCalendarAutoSync(enabled, syncMutation)
+}
+
+export function useMicrosoftAutoSync(enabled, syncMutation) {
+  useCalendarAutoSync(enabled, syncMutation)
+}
+
+function useCalendarAutoSync(enabled, syncMutation) {
   const syncRef = useRef(syncMutation)
   useEffect(() => {
     syncRef.current = syncMutation
@@ -81,7 +121,7 @@ export function useGoogleAutoSync(enabled, syncMutation) {
       lastAutoSyncAt = Date.now()
       syncRef.current.mutate()
     }
-    maybeSync() // on mount
+    maybeSync()
     window.addEventListener('focus', maybeSync)
     document.addEventListener('visibilitychange', maybeSync)
     return () => {

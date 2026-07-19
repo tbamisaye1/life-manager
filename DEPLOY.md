@@ -35,8 +35,10 @@ free **Neon** Postgres database.
    serverless function in `api/`.
 4. **Environment Variables** → add `DATABASE_URL` = your Neon string. Add any
    integration secrets you use too (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `NOTION_TOKEN`, …). For OAuth redirect URIs, use your Vercel URL, e.g.
-   `https://<your-app>.vercel.app/api/integrations/google/callback`.
+   `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `NOTION_TOKEN`, …). For OAuth
+   redirect URIs, use your Vercel URL, e.g.
+   `https://<your-app>.vercel.app/api/integrations/google/callback` and
+   `https://<your-app>.vercel.app/api/integrations/microsoft/callback`.
 5. **Deploy.** Vercel builds the frontend and runs the API as a function. On the
    first API request the schema is created and demo data seeds once.
 

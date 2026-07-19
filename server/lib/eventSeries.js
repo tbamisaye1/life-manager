@@ -1,4 +1,4 @@
-/** Whether an event belongs to a repeating series (local rows or Google instances). */
+/** Whether an event belongs to a repeating series (local rows or provider instances). */
 export function isRecurringEvent(event) {
   if (!event) return false
   if (event.series_id) return true
@@ -7,6 +7,10 @@ export function isRecurringEvent(event) {
 
 /** Series identifier for batch updates. */
 export function seriesKey(event) {
+  // Microsoft Graph occurrences store seriesMasterId in series_id on sync.
+  if (event.source === 'microsoft' && event.series_id) {
+    return { type: 'microsoft', key: event.series_id, masterId: event.series_id }
+  }
   if (event.series_id) return { type: 'local', key: event.series_id }
   if (event.source === 'google' && event.external_id?.includes('_')) {
     const masterId = event.external_id.split('_')[0]
@@ -91,6 +95,25 @@ export async function idsForScope(db, event, scope) {
       return (await db.prepare('SELECT id FROM events WHERE series_id = ? ORDER BY start').all(sk.key)).map((r) => r.id)
     }
     return (await db.prepare('SELECT id FROM events WHERE series_id = ? AND start >= ? ORDER BY start').all(sk.key, event.start)).map((r) => r.id)
+  }
+
+  if (sk.type === 'microsoft') {
+    const params = {
+      email: event.microsoft_account,
+      cal: event.microsoft_calendar_id,
+      series: sk.masterId,
+      start: event.start,
+    }
+    if (scope === 'all') {
+      return (await db.prepare(
+        `SELECT id FROM events WHERE source='microsoft' AND microsoft_account=@email AND microsoft_calendar_id=@cal
+           AND series_id=@series ORDER BY start`,
+      ).all(params)).map((r) => r.id)
+    }
+    return (await db.prepare(
+      `SELECT id FROM events WHERE source='microsoft' AND microsoft_account=@email AND microsoft_calendar_id=@cal
+         AND series_id=@series AND start >= @start ORDER BY start`,
+    ).all(params)).map((r) => r.id)
   }
 
   // Google recurring instances mirrored locally.

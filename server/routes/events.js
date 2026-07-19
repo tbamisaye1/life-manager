@@ -6,10 +6,14 @@ import { expandRecurrence } from '../lib/recurrence.js'
 import { idsForScope, googleFieldsChanged, googlePatchFrom, normalizeDateTime, patchForBatchScope, RECUR_SCOPES } from '../lib/eventSeries.js'
 import { normalizeEventEnd } from '../lib/eventTimes.js'
 import * as googleI from '../integrations/google.js'
+import * as microsoftI from '../integrations/microsoft.js'
 
 const router = Router()
 const ALLOWED = ['title', 'start', 'end', 'all_day', 'location', 'notes', 'color', 'project_id', 'flagship', 'series_id', 'flagship_override']
 const BOOLS = ['all_day', 'flagship']
+// Same calendar fields for Google + Microsoft write-back.
+const calendarFieldsChanged = googleFieldsChanged
+const calendarPatchFrom = googlePatchFrom
 
 // GET /api/events?from=ISO&to=ISO&flagship=1
 //  - date-only `to` is treated as end-of-day so timed events on the final day
@@ -116,19 +120,29 @@ router.patch('/:id', async (req, res) => {
 
   const targetIds = await idsForScope(db, existing, scope)
   const finalPatch = patchForBatchScope(existing, patch, targetIds)
-  const googlePatch = googlePatchFrom(existing, finalPatch)
+  const calPatch = calendarPatchFrom(existing, finalPatch)
 
-  // Google write-back: one instance, or the series master for "all".
-  if (existing.source === 'google' && googleFieldsChanged(existing, finalPatch)) {
+  // Provider write-back: one instance, or the series master for "all".
+  if (existing.source === 'google' && calendarFieldsChanged(existing, finalPatch)) {
     try {
       if (scope === 'one') {
-        await googleI.pushUpdate(existing, googlePatch)
+        await googleI.pushUpdate(existing, calPatch)
       } else if (scope === 'all') {
-        await googleI.pushUpdateSeriesMaster(existing, googlePatch)
+        await googleI.pushUpdateSeriesMaster(existing, calPatch)
       }
-      // "following" timing changes stay local-only until we split the Google series.
     } catch (err) {
       return res.status(502).json(httpError(`Couldn't update the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
+    }
+  }
+  if (existing.source === 'microsoft' && calendarFieldsChanged(existing, finalPatch)) {
+    try {
+      if (scope === 'one') {
+        await microsoftI.pushUpdate(existing, calPatch)
+      } else if (scope === 'all') {
+        await microsoftI.pushUpdateSeriesMaster(existing, calPatch)
+      }
+    } catch (err) {
+      return res.status(502).json(httpError(`Couldn't update the event on Outlook: ${err.message}`, 'MICROSOFT_WRITE'))
     }
   }
 
@@ -161,6 +175,17 @@ router.delete('/:id', async (req, res) => {
       }
     } catch (err) {
       return res.status(502).json(httpError(`Couldn't delete the event on Google: ${err.message}`, 'GOOGLE_WRITE'))
+    }
+  }
+  if (existing.source === 'microsoft') {
+    try {
+      if (scope === 'one') {
+        await microsoftI.pushDelete(existing)
+      } else if (scope === 'all') {
+        await microsoftI.pushDeleteSeriesMaster(existing)
+      }
+    } catch (err) {
+      return res.status(502).json(httpError(`Couldn't delete the event on Outlook: ${err.message}`, 'MICROSOFT_WRITE'))
     }
   }
 

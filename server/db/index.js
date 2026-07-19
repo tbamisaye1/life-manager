@@ -105,6 +105,8 @@ export async function initDb() {
   // Which Google account/calendar a synced event belongs to (for write-back).
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_account TEXT')
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS google_calendar_id TEXT')
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS microsoft_account TEXT')
+  await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS microsoft_calendar_id TEXT')
   await client.exec('ALTER TABLE google_calendars ADD COLUMN IF NOT EXISTS timezone TEXT')
   // Pages can be attached to tasks, projects, etc. (Notion-style nesting anywhere).
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_type TEXT')

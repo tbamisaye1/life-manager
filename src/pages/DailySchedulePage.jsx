@@ -20,7 +20,7 @@ import { WeekTimeline } from '../components/schedule/WeekTimeline'
 import { EventModal } from '../components/calendar/EventModal'
 import { EventChip } from '../components/calendar/EventChip'
 import { events as eventsResource } from '../hooks/resources'
-import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync } from '../hooks/useIntegrations'
+import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync, useMicrosoftAccounts, useMicrosoftCalendarActions, useMicrosoftAutoSync } from '../hooks/useIntegrations'
 import { toISOLocal } from '../components/schedule/timeline'
 import { cn } from '../lib/cn'
 
@@ -65,8 +65,20 @@ export default function DailySchedulePage() {
   // Per-account view filter ('all' or an account email)
   const [accountFilter, setAccountFilter] = useState('all')
   const { data: gAccounts = [] } = useGoogleAccounts()
-  const { sync } = useGoogleCalendarActions()
-  useGoogleAutoSync(gAccounts.length > 0, sync)
+  const { data: mAccounts = [] } = useMicrosoftAccounts()
+  const { sync: syncGoogle } = useGoogleCalendarActions()
+  const { sync: syncMicrosoft } = useMicrosoftCalendarActions()
+  useGoogleAutoSync(gAccounts.length > 0, syncGoogle)
+  useMicrosoftAutoSync(mAccounts.length > 0, syncMicrosoft)
+  const calendarAccounts = [
+    ...gAccounts.map((a) => ({ email: a.email, label: accountShortLabel(a.email) })),
+    ...mAccounts.map((a) => ({ email: a.email, label: accountShortLabel(a.email) })),
+  ]
+  const hasRemoteCalendars = calendarAccounts.length > 0
+  const syncAll = () => {
+    if (gAccounts.length) syncGoogle.mutate()
+    if (mAccounts.length) syncMicrosoft.mutate()
+  }
 
   // --- Date range for API query ---
   const weekStart = startOfWeek(anchorDate, { weekStartsOn: 1 })
@@ -83,7 +95,7 @@ export default function DailySchedulePage() {
 
   const filteredEvents = accountFilter === 'all'
     ? eventsData
-    : eventsData.filter((e) => e.google_account === accountFilter)
+    : eventsData.filter((e) => e.google_account === accountFilter || e.microsoft_account === accountFilter)
   const { allDay, timed } = partitionEvents(filteredEvents)
 
   // --- Navigation ---
@@ -145,14 +157,14 @@ export default function DailySchedulePage() {
         onNext={handleNext}
         onToday={handleToday}
         onNewEvent={openNewEvent}
-        onSync={gAccounts.length > 0 ? () => sync.mutate() : undefined}
-        syncing={sync.isPending}
+        onSync={hasRemoteCalendars ? syncAll : undefined}
+        syncing={syncGoogle.isPending || syncMicrosoft.isPending}
       />
 
       {/* Per-account filter — default shows all calendars */}
-      {gAccounts.length > 0 && (
+      {hasRemoteCalendars && (
         <div className="mb-3 flex flex-wrap gap-1.5">
-          {[{ email: 'all', label: 'All calendars' }, ...gAccounts.map((a) => ({ email: a.email, label: accountShortLabel(a.email) }))].map((f) => (
+          {[{ email: 'all', label: 'All calendars' }, ...calendarAccounts].map((f) => (
             <button
               key={f.email}
               onClick={() => setAccountFilter(f.email)}

@@ -4,6 +4,7 @@ import { Settings, ShieldCheck, Info } from 'lucide-react'
 import { NavPageHeader, Button, Input, Label, Loading, ErrorState } from '../components/ui'
 import { IntegrationCard } from '../components/settings/IntegrationCard'
 import { GoogleAccountsCard } from '../components/settings/GoogleAccountsCard'
+import { MicrosoftAccountsCard } from '../components/settings/MicrosoftAccountsCard'
 import { useIntegrationStatus, useSyncProvider, useDisconnectProvider } from '../hooks/useIntegrations'
 
 export default function SettingsPage() {
@@ -34,7 +35,8 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-4">
-        <GoogleAccountsCard configured={data.google.configured} />
+        <GoogleAccountsCard configured={data.google?.configured} />
+        <MicrosoftAccountsCard configured={data.microsoft?.configured} />
 
         <IntegrationCard
           provider="notion"

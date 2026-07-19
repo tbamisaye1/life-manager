@@ -1,5 +1,6 @@
 import { db } from '../../db/index.js'
 import * as googleI from '../../integrations/google.js'
+import * as microsoftI from '../../integrations/microsoft.js'
 
 // Shared helpers for the assistant tools. Everything works in local wall-clock
 // time — "3pm" means 3pm to the user.
@@ -58,12 +59,15 @@ export async function findEvents({ query, from, to, flagshipOnly, source, limit 
   return rows.map((r) => ({ ...r, flagship: !!r.flagship }))
 }
 
-// Delete one event locally and on Google when applicable.
+// Delete one event locally and on the calendar provider when applicable.
 export async function removeEventById(eventId) {
   const ev = await db.prepare('SELECT * FROM events WHERE id = ?').get(eventId)
   if (!ev) return { ok: false, message: 'No event with that id.' }
   if (ev.source === 'google') {
     try { await googleI.pushDelete(ev) } catch { /* keep going — drop local mirror */ }
+  }
+  if (ev.source === 'microsoft') {
+    try { await microsoftI.pushDelete(ev) } catch { /* keep going */ }
   }
   await db.prepare('DELETE FROM events WHERE id = ?').run(eventId)
   return { ok: true, id: eventId, title: ev.title }

@@ -325,6 +325,34 @@ CREATE TABLE IF NOT EXISTS google_calendars (
 );
 CREATE INDEX IF NOT EXISTS idx_google_calendars_account ON google_calendars(account_email);
 
+-- Connected Microsoft / Outlook accounts (multiple). Calendar-only.
+CREATE TABLE IF NOT EXISTS microsoft_accounts (
+  email          TEXT PRIMARY KEY,
+  label          TEXT,
+  access_token   TEXT,
+  refresh_token  TEXT,
+  expiry         TEXT,
+  scope          TEXT,
+  is_default     INTEGER NOT NULL DEFAULT 0,
+  connected_at   TEXT,
+  last_synced_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS microsoft_calendars (
+  id             TEXT PRIMARY KEY,                -- `${email}::${calendar_id}`
+  account_email  TEXT NOT NULL REFERENCES microsoft_accounts(email) ON DELETE CASCADE,
+  calendar_id    TEXT NOT NULL,
+  summary        TEXT,
+  color          TEXT,
+  is_primary     INTEGER NOT NULL DEFAULT 0,
+  access_role    TEXT,
+  timezone       TEXT,
+  selected       INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT,
+  updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_microsoft_calendars_account ON microsoft_calendars(account_email);
+
 -- Pinboard: quick-capture sticky notes for fleeting thoughts/ideas/reminders.
 -- Deliberately frictionless — type and go, delete when done. Mobile-first.
 CREATE TABLE IF NOT EXISTS pins (

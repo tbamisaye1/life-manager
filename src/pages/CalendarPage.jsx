@@ -13,7 +13,7 @@ import { CalendarHeader } from '../components/calendar/CalendarHeader'
 import { MonthGrid } from '../components/calendar/MonthGrid'
 import { EventModal } from '../components/calendar/EventModal'
 import { events as eventsResource } from '../hooks/resources'
-import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync } from '../hooks/useIntegrations'
+import { useGoogleAccounts, useGoogleCalendarActions, useGoogleAutoSync, useMicrosoftAccounts, useMicrosoftCalendarActions, useMicrosoftAutoSync } from '../hooks/useIntegrations'
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -25,8 +25,11 @@ export default function CalendarPage() {
   const [modal, setModal] = useState(null)
 
   const { data: gAccounts = [] } = useGoogleAccounts()
-  const { sync } = useGoogleCalendarActions()
-  useGoogleAutoSync(gAccounts.length > 0, sync)
+  const { data: mAccounts = [] } = useMicrosoftAccounts()
+  const { sync: syncGoogle } = useGoogleCalendarActions()
+  const { sync: syncMicrosoft } = useMicrosoftCalendarActions()
+  useGoogleAutoSync(gAccounts.length > 0, syncGoogle)
+  useMicrosoftAutoSync(mAccounts.length > 0, syncMicrosoft)
 
   // Compute the visible range (full grid including days from adjacent months)
   const from = format(startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 0 }), 'yyyy-MM-dd')
@@ -56,8 +59,11 @@ export default function CalendarPage() {
         onPrev={() => setCurrentMonth((m) => addMonths(m, -1))}
         onNext={() => setCurrentMonth((m) => addMonths(m, 1))}
         onToday={() => setCurrentMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
-        onSync={gAccounts.length > 0 ? () => sync.mutate() : undefined}
-        syncing={sync.isPending}
+        onSync={(gAccounts.length > 0 || mAccounts.length > 0) ? () => {
+          if (gAccounts.length) syncGoogle.mutate()
+          if (mAccounts.length) syncMicrosoft.mutate()
+        } : undefined}
+        syncing={syncGoogle.isPending || syncMicrosoft.isPending}
       />
 
       {isLoading ? (

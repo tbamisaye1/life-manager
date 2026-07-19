@@ -4,26 +4,49 @@ import { format } from 'date-fns'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Modal, Button, Input, Textarea, Select, Label, Checkbox } from '../ui'
 import { events as eventsResource, projects as projectsResource } from '../../hooks/resources'
-import { useGoogleCalendars, useGoogleAccounts } from '../../hooks/useIntegrations'
+import { useGoogleCalendars, useGoogleAccounts, useMicrosoftCalendars, useMicrosoftAccounts } from '../../hooks/useIntegrations'
 import { api } from '../../lib/api'
 import { PROJECT_COLORS, colorClasses } from '../../lib/colors'
 import { cn } from '../../lib/cn'
 import { isRecurringEvent } from '../../lib/eventSeries'
 import { RecurringScopeModal } from './RecurringScopeModal'
 
-// Build "Add to" targets: local + each selected Google calendar; default = the
-// default account's primary calendar.
-function buildTargets(calendars, accounts) {
-  const selected = (calendars || []).filter((c) => c.selected)
+// Build "Add to" targets: local + each selected Google/Microsoft calendar.
+function buildTargets(gCalendars, gAccounts, mCalendars, mAccounts) {
   const targets = [{ value: 'local', label: 'Life Manager', isLocal: true }]
-  for (const c of selected) {
-    targets.push({ value: c.id, label: `${c.summary} · ${c.account_email}`, email: c.account_email, calendarId: c.calendar_id, isLocal: false })
+  for (const c of (gCalendars || []).filter((c) => c.selected)) {
+    targets.push({
+      value: `google::${c.id}`,
+      label: `${c.summary} · ${c.account_email}`,
+      email: c.account_email,
+      calendarId: c.calendar_id,
+      provider: 'google',
+      isLocal: false,
+    })
+  }
+  for (const c of (mCalendars || []).filter((c) => c.selected)) {
+    targets.push({
+      value: `microsoft::${c.id}`,
+      label: `${c.summary} · ${c.account_email}`,
+      email: c.account_email,
+      calendarId: c.calendar_id,
+      provider: 'microsoft',
+      isLocal: false,
+    })
   }
   let defaultTarget = 'local'
-  const defAcc = (accounts || []).find((a) => a.is_default)
-  if (defAcc) {
-    const prim = selected.find((c) => c.account_email === defAcc.email && c.is_primary) || selected.find((c) => c.account_email === defAcc.email)
-    if (prim) defaultTarget = prim.id
+  const defG = (gAccounts || []).find((a) => a.is_default)
+  if (defG) {
+    const prim = (gCalendars || []).find((c) => c.selected && c.account_email === defG.email && c.is_primary)
+      || (gCalendars || []).find((c) => c.selected && c.account_email === defG.email)
+    if (prim) defaultTarget = `google::${prim.id}`
+  } else {
+    const defM = (mAccounts || []).find((a) => a.is_default)
+    if (defM) {
+      const prim = (mCalendars || []).find((c) => c.selected && c.account_email === defM.email && c.is_primary)
+        || (mCalendars || []).find((c) => c.selected && c.account_email === defM.email)
+      if (prim) defaultTarget = `microsoft::${prim.id}`
+    }
   }
   return { targets, defaultTarget }
 }
@@ -86,12 +109,18 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
 
   const { data: gCalendars = [] } = useGoogleCalendars()
   const { data: gAccounts = [] } = useGoogleAccounts()
-  const { targets, defaultTarget } = buildTargets(gCalendars, gAccounts)
+  const { data: mCalendars = [] } = useMicrosoftCalendars()
+  const { data: mAccounts = [] } = useMicrosoftAccounts()
+  const { targets, defaultTarget } = buildTargets(gCalendars, gAccounts, mCalendars, mAccounts)
 
   const [draft, setDraft] = useState({
     ...initialDraft,
     target: isEditing
-      ? (event.source === 'google' && event.google_account ? `${event.google_account}::${event.google_calendar_id}` : 'local')
+      ? (event.source === 'google' && event.google_account
+        ? `google::${event.google_account}::${event.google_calendar_id}`
+        : event.source === 'microsoft' && event.microsoft_account
+          ? `microsoft::${event.microsoft_account}::${event.microsoft_calendar_id}`
+          : 'local')
       : defaultTarget,
     repeat: 'none',
     weekdays: [],
@@ -106,6 +135,13 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
   const queryClient = useQueryClient()
   const createGoogle = useMutation({
     mutationFn: (body) => api.post('/integrations/google/events', body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] })
+      queryClient.invalidateQueries({ queryKey: ['today'] })
+    },
+  })
+  const createMicrosoft = useMutation({
+    mutationFn: (body) => api.post('/integrations/microsoft/events', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] })
       queryClient.invalidateQueries({ queryKey: ['today'] })
@@ -140,7 +176,9 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
   }
 
   const targetMeta = targets.find((t) => t.value === draft.target) || targets[0]
-  const isGoogleTarget = !isEditing && targetMeta && !targetMeta.isLocal
+  const isRemoteTarget = !isEditing && targetMeta && !targetMeta.isLocal
+  const isGoogleTarget = isRemoteTarget && targetMeta.provider === 'google'
+  const isMicrosoftTarget = isRemoteTarget && targetMeta.provider === 'microsoft'
 
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }))
 
@@ -173,6 +211,8 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         await update.mutateAsync({ id: event.id, ...payload })
       } else if (isGoogleTarget) {
         await createGoogle.mutateAsync({ ...buildPayload(), email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
+      } else if (isMicrosoftTarget) {
+        await createMicrosoft.mutateAsync({ ...buildPayload(), email: targetMeta.email, calendar_id: targetMeta.calendarId, ...(isRepeating ? recurrenceFields() : {}) })
       } else if (isRepeating) {
         await createLocalRecurring.mutateAsync({
           title: payload.title, all_day: payload.all_day, location: payload.location, notes: payload.notes,
@@ -233,7 +273,7 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
     setScopeError(null)
   }
 
-  const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending || createLocalRecurring.isPending
+  const isPending = create.isPending || update.isPending || remove.isPending || createGoogle.isPending || createMicrosoft.isPending || createLocalRecurring.isPending
   const customInvalid = draft.repeat === 'custom' && draft.weekdays.length === 0
 
   return (
@@ -286,6 +326,9 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
         {isEditing && event.source === 'google' && (
           <p className="text-xs text-zinc-500">On Google Calendar · {event.google_account}</p>
         )}
+        {isEditing && event.source === 'microsoft' && (
+          <p className="text-xs text-zinc-500">On Outlook · {event.microsoft_account}</p>
+        )}
 
         {/* Repeat (create mode) */}
         {!isEditing && (
@@ -324,8 +367,8 @@ export function EventModal({ event, prefillDate, prefillStart, prefillEnd, open,
           <span className="text-sm text-zinc-600">All-day</span>
         </div>
 
-        {/* Flagship toggle — month overview; not applicable to Google events */}
-        <div className={cn('flex items-center gap-2', isGoogleTarget && 'hidden')}>
+        {/* Flagship toggle — month overview; not for remote calendar creates */}
+        <div className={cn('flex items-center gap-2', isRemoteTarget && 'hidden')}>
           <Checkbox
             checked={draft.flagship}
             onChange={(checked) => set({ flagship: checked })}

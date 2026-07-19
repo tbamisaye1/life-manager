@@ -42,6 +42,14 @@ The app works on local data without any of this. To turn on real sync, copy
 5. Put the client id/secret in `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 6. Restart, open **Settings & Sync**, and click **Connect** under Google.
 
+### Microsoft / Outlook (Calendar)
+1. Go to [Azure Portal → App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) and create a registration.
+2. Account types: **Accounts in any organizational directory and personal Microsoft accounts**.
+3. Add a **Web** redirect URI: `http://localhost:4000/api/integrations/microsoft/callback` (and your Vercel URL in prod).
+4. Certificates & secrets → create a client secret.
+5. API permissions → Microsoft Graph **delegated**: `User.Read`, `Calendars.ReadWrite` (and grant admin consent if required). `offline_access` is requested at auth time.
+6. Put `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` in `.env`, restart, then **Connect** under Outlook / Microsoft in Settings.
+
 ### Notion
 - Easiest: create an [internal integration](https://www.notion.so/my-integrations),
   share your databases with it, and put its token in `.env` as `NOTION_TOKEN`.
