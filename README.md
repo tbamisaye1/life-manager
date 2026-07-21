@@ -13,7 +13,7 @@ Clone it and you get demo seed data on local PGlite. That is not my production d
 - Pinboard
 - Gym and rugby logs
 - Email / reply queue
-- In-app assistant (LangGraph ReAct agent, OpenAI tools)
+- In-app AI assistant (LangGraph ReAct agent, OpenAI tools)
 - Optional Google Calendar + Gmail, Outlook, Notion
 
 ## Stack
@@ -24,13 +24,28 @@ Clone it and you get demo seed data on local PGlite. That is not my production d
 | Backend | Express |
 | Database | PGlite locally, Neon in production |
 | Hosting | Vercel |
-| Assistant | LangChain, LangGraph, OpenAI |
+| AI assistant | LangChain, LangGraph, OpenAI |
 
-While building this I used Cursor with scoped subagents under `.claude/agents/` (`backend-engineer`, `frontend-architect`, `mobile-engineer`, `code-reviewer`, `design-expert`, `user-simulator`, `taskmaster`).
+## How I built this
 
-## Assistant
+I built Life Manager as a real app I use, and also as a place to learn agentic coding with Claude Code (and Cursor). Not autocomplete-only: full workflows with agents that plan, implement, review, and verify.
 
-ReAct agent (`createReactAgent`) with tools for schedule, tasks, gym notation like `5x10@20kg`, notes, pinboard, rugby, and inbox. The UI shows chips for what it did.
+In practice that meant:
+
+- Agent teams / multi-agent orchestration: a lead session delegates to specialized subagents instead of one chat doing everything
+- Custom subagents with scoped roles: `backend-engineer`, `frontend-architect`, `mobile-engineer`, `code-reviewer`, `design-expert`, `user-simulator`, `taskmaster` (see `.claude/agents/`)
+- Parallel agents on API + web (+ mobile), with separate local ports/DB slots so they do not collide
+- Skills (reusable playbooks agents load when the task matches)
+- Task lists and commits at each green build
+- Done gates via `taskmaster` (build, lint, boot, checklist) before calling something finished
+- Read-only review loops: code review, design critique, and user-journey simulation as separate passes
+- Project instructions so every session knows ports, conventions, and which surface to edit
+
+## AI assistant
+
+Separate from how the code was built: the app has a chat assistant that can read and change your Life Manager data through tools.
+
+ReAct agent (`createReactAgent`) over OpenAI, with tools for schedule, tasks, gym notation like `5x10@20kg`, notes, pinboard, rugby, and inbox. The UI shows chips for what it actually did.
 
 Needs `OPENAI_API_KEY` in `.env`. Everything else still works without it. Code: `server/lib/assistant/`.
 
