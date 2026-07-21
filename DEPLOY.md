@@ -4,8 +4,8 @@ The app is hostable as-is: the **frontend** (Vite build) and the **API** (Expres
 running as a Vercel serverless function) both deploy to Vercel, with data in a
 free **Neon** Postgres database.
 
-> **Isolation:** create brand-new Neon + Vercel accounts/projects. Nothing here
-> shares anything with Rotunda's AWS — it's a completely separate space.
+> Create Neon + Vercel accounts/projects dedicated to this app. Keep secrets in
+> Vercel env vars — never commit them.
 
 ## How the database works
 
@@ -35,7 +35,9 @@ free **Neon** Postgres database.
    serverless function in `api/`.
 4. **Environment Variables** → add `DATABASE_URL` = your Neon string. Add any
    integration secrets you use too (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `NOTION_TOKEN`, …). For OAuth redirect URIs, use your Vercel URL, e.g.
+   `NOTION_TOKEN`, …). To **lock** the deployed app (recommended once public),
+   set `APP_PIN` to a private 6-digit code — leave it unset only for an open demo.
+   For OAuth redirect URIs, use your Vercel URL, e.g.
    `https://<your-app>.vercel.app/api/integrations/google/callback`.
 5. **Deploy.** Vercel builds the frontend and runs the API as a function. On the
    first API request the schema is created and demo data seeds once.

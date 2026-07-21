@@ -3,8 +3,8 @@ import { PinLock } from './PinLock'
 import { isDeviceAuthed, rememberDevice, forgetDevice } from '../../lib/lock'
 
 /**
- * Gates the whole web app behind the same 6-digit passcode as mobile.
- * Returning browsers with a valid unlock cookie skip the keypad.
+ * Gates the web app only when the API has APP_PIN set (protected mode).
+ * Clones with no APP_PIN run in open demo mode — no keypad.
  */
 export function PinGate({ children }) {
   const [status, setStatus] = useState('loading') // loading | locked | unlocked
@@ -19,8 +19,12 @@ export function PinGate({ children }) {
     ;(async () => {
       try {
         const res = await fetch('/api/auth/status', { credentials: 'include' })
-        const data = res.ok ? await res.json() : { unlocked: false }
+        const data = res.ok ? await res.json() : { lockEnabled: true, unlocked: false }
         if (!active) return
+        if (!data.lockEnabled) {
+          setStatus('unlocked')
+          return
+        }
         if (data.unlocked) {
           rememberDevice()
           setStatus('unlocked')

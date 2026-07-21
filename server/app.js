@@ -53,7 +53,7 @@ app.use(async (req, res, next) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
 
-// Passcode gate — same PIN as mobile. Cookie after unlock, or X-Life-Manager-Pin header.
+// Passcode gate — only when APP_PIN is set (production). Unset = open demo.
 app.use(requirePin)
 app.use('/api/auth', auth)
 

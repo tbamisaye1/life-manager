@@ -1,12 +1,13 @@
 import { Router } from 'express'
+import { timingSafeEqual } from 'node:crypto'
 import { httpError } from '../lib/http.js'
 import {
+  pinRequired,
   expectedPin,
   isUnlocked,
   setUnlockCookie,
   clearUnlockCookie,
 } from '../lib/pinAuth.js'
-import { timingSafeEqual } from 'node:crypto'
 
 const router = Router()
 
@@ -19,16 +20,24 @@ function safeEqual(a, b) {
 }
 
 router.get('/status', (req, res) => {
-  res.json({ unlocked: isUnlocked(req) })
+  const enabled = pinRequired()
+  res.json({
+    lockEnabled: enabled,
+    unlocked: !enabled || isUnlocked(req),
+    mode: enabled ? 'protected' : 'demo',
+  })
 })
 
 router.post('/unlock', (req, res) => {
+  if (!pinRequired()) {
+    return res.json({ ok: true, mode: 'demo' })
+  }
   const pin = String(req.body?.pin || '')
   if (!safeEqual(pin, expectedPin())) {
     return res.status(401).json(httpError('Wrong passcode', 'BAD_PIN'))
   }
   setUnlockCookie(res)
-  res.json({ ok: true })
+  res.json({ ok: true, mode: 'protected' })
 })
 
 router.post('/lock', (_req, res) => {

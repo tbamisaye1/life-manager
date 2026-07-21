@@ -11,6 +11,10 @@ server/db/*.db
 server/db/*.pglite/
 .vercel
 
+# Cursor / editor local junk
+.cursor/
+.Rhistory
+
 # Logs
 logs
 *.log

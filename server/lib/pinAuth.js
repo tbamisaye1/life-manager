@@ -1,9 +1,19 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { httpError } from './http.js'
 
-/** Expected passcode — same as mobile. Override with APP_PIN in env. */
+/**
+ * Passcode gate is opt-in via APP_PIN.
+ * - Unset → public demo mode (clone & run with no lock).
+ * - Set (e.g. on Vercel) → API + clients require the passcode.
+ * Never hardcode a PIN in source — it would leak when the repo is public.
+ */
+export function pinRequired() {
+  const p = process.env.APP_PIN
+  return typeof p === 'string' && p.length > 0
+}
+
 export function expectedPin() {
-  return process.env.APP_PIN || ''
+  return pinRequired() ? process.env.APP_PIN : null
 }
 
 const COOKIE = 'lm_unlock'
@@ -33,6 +43,7 @@ export function parseCookies(header = '') {
 }
 
 export function isUnlocked(req) {
+  if (!pinRequired()) return true
   const pin = expectedPin()
   const headerPin = req.get('x-life-manager-pin')
   if (headerPin && safeEqual(headerPin, pin)) return true
@@ -41,6 +52,7 @@ export function isUnlocked(req) {
 }
 
 export function setUnlockCookie(res) {
+  if (!pinRequired()) return
   const secure = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL)
   const parts = [
     `${COOKIE}=${encodeURIComponent(unlockToken())}`,
@@ -67,6 +79,7 @@ export function pinAuthExempt(req) {
 }
 
 export function requirePin(req, res, next) {
+  if (!pinRequired()) return next()
   if (pinAuthExempt(req)) return next()
   if (isUnlocked(req)) return next()
   return res.status(401).json(httpError('Passcode required', 'LOCKED'))

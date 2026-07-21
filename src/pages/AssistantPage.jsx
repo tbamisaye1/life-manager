@@ -11,7 +11,7 @@ import {
 } from '../hooks/useAssistant'
 
 const EXAMPLE_PROMPTS = [
-  'Schedule 30 min today to review my Rotunda deck',
+  'Schedule 30 min today to polish the Northstar landing page',
   'Remind me to email my PI tomorrow morning',
   'Find me time to go to the gym this afternoon',
   "Add 'read a paper on diffusion models' to my bored list",

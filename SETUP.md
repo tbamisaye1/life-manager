@@ -3,10 +3,9 @@
 A personal life-management app that unifies tasks, calendar, email, projects,
 goals, and more into one calm, Notion-inspired UI.
 
-> **Privacy / isolation:** by default everything runs locally on an embedded
-> Postgres (PGlite) in `server/db/` — zero setup, no accounts. For persistent
-> hosting, point `DATABASE_URL` at a Neon Postgres database (see **DEPLOY.md**).
-> Either way it's a completely separate space — nothing here can touch Rotunda.
+> **Privacy:** by default everything runs locally on an embedded Postgres
+> (PGlite) in `server/db/` — zero setup, no accounts. For persistent hosting,
+> point `DATABASE_URL` at a Neon Postgres database (see **DEPLOY.md**).
 
 ## Run it locally
 

@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 You are the backend engineer for **Life Manager**, a personal life-management app.
 
 ## Hard constraints (non-negotiable)
-- **NO cloud, NO AWS, NO external infra.** The database is a local SQLite file inside this repo (`server/db/`). You must never create, connect to, or modify any AWS account, RDS, DynamoDB, ECS, S3, or any remote database. The user runs a production company ("Rotunda") on AWS — your work must be 100% isolated from it. If a task seems to require cloud infra, stop and flag it instead.
+- **Local-first by default.** Local dev uses embedded PGlite in `server/db/`. Production uses the caller's own Neon Postgres via `DATABASE_URL`. Do not invent extra cloud infra. If a task seems to require something beyond Neon/Vercel as documented in `DEPLOY.md`, stop and flag it instead.
 - Everything runs locally: `node`/Express server + `better-sqlite3`.
 
 ## Your responsibilities

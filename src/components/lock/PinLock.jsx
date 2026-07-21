@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Delete, Lock } from 'lucide-react'
-import { PIN_LENGTH, checkPin } from '../../lib/lock'
+import { PIN_LENGTH } from '../../lib/lock'
 import { cn } from '../../lib/cn'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del']
@@ -17,11 +17,7 @@ export function PinLock({ onSuccess, busy = false }) {
   }, [])
 
   async function submit(next) {
-    if (!checkPin(next)) {
-      triggerShake()
-      window.setTimeout(() => setPin(''), 350)
-      return
-    }
+    // Server checks APP_PIN — nothing is hardcoded in the client.
     try {
       await onSuccess(next)
     } catch {

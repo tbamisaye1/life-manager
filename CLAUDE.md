@@ -22,12 +22,11 @@ component-heavy. See `SETUP.md` to run it.
 5. End commit messages with the Co-Authored-By trailer.
 6. Keep `main` always-runnable.
 
-## Hard isolation rule
+## Ports & hosting
 
-This project must stay **100% isolated** from the user's Rotunda company project.
-Never touch any AWS/Rotunda resource. Rotunda's dev server uses
-port 5173 — Life Manager runs on **5180 (web)** and **4000 (api)**; don't collide.
-Production uses dedicated Neon + Vercel (see `DEPLOY.md`).
+Life Manager runs on **5180 (web)** and **4000 (api)** locally. Don't collide
+with other projects on those ports. Production uses dedicated Neon + Vercel
+(see `DEPLOY.md`).
 
 ## Dev
 

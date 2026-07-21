@@ -1,15 +1,9 @@
-// App passcode — mirrors the mobile gate (same 6-digit code).
-// Once this browser unlocks successfully we remember it in localStorage and
-// the server sets an httpOnly cookie so /api/* stays closed to strangers.
+// Web lock helpers. The real passcode lives only in server env (APP_PIN).
+// When APP_PIN is unset the API reports demo mode and PinGate stays open.
 
 export const PIN_LENGTH = 6
-export const EXPECTED_PIN = ''
 
 const KEY_AUTHED = 'lm.pin.authed'
-
-export function checkPin(entered) {
-  return entered === EXPECTED_PIN
-}
 
 export function isDeviceAuthed() {
   try {
