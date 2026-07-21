@@ -29,6 +29,19 @@ body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+}
+
 /* Quiet, thin scrollbars to match the calm aesthetic */
 * {
   scrollbar-width: thin;

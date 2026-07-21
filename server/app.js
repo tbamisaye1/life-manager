@@ -6,7 +6,9 @@ import cors from 'cors'
 import { initDb } from './db/index.js'
 import { seedIfEmpty } from './db/seed.js'
 import { errorMiddleware } from './lib/http.js'
+import { requirePin } from './lib/pinAuth.js'
 
+import auth from './routes/auth.js'
 import tasks from './routes/tasks.js'
 import projects from './routes/projects.js'
 import events from './routes/events.js'
@@ -41,7 +43,7 @@ export function ensureInit() {
 }
 
 export const app = express()
-app.use(cors())
+app.use(cors({ origin: true, credentials: true }))
 app.use(express.json({ limit: '1mb' }))
 
 // Ensure the schema + seed exist before handling any API request.
@@ -50,6 +52,10 @@ app.use(async (req, res, next) => {
 })
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
+
+// Passcode gate — same PIN as mobile. Cookie after unlock, or X-Life-Manager-Pin header.
+app.use(requirePin)
+app.use('/api/auth', auth)
 
 app.use('/api/tasks', tasks)
 app.use('/api/projects', projects)
