@@ -17,20 +17,27 @@ export function QuickAdd({ open, onClose }) {
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
   const [projectId, setProjectId] = useState('')
+  const [isHomework, setIsHomework] = useState(false)
 
   const { data: projectList = [] } = projectsResource.useList()
   const createTask = tasks.useCreate()
   const createEvent = events.useCreate()
   const createNote = notes.useCreate()
 
-  const reset = () => { setTitle(''); setDate(''); setProjectId(''); setType('task') }
+  const reset = () => { setTitle(''); setDate(''); setProjectId(''); setType('task'); setIsHomework(false) }
   const close = () => { reset(); onClose() }
 
   const submit = async (e) => {
     e.preventDefault()
     if (!title.trim()) return
     if (type === 'task') {
-      await createTask.mutateAsync({ title, due_date: date || null, project_id: projectId || null })
+      await createTask.mutateAsync({
+        title,
+        due_date: date || null,
+        project_id: projectId || null,
+        is_homework: isHomework ? 1 : 0,
+        emoji: isHomework ? '📚' : undefined,
+      })
     } else if (type === 'event') {
       await createEvent.mutateAsync({ title, start: date || new Date().toISOString().slice(0, 10), all_day: !date.includes('T'), project_id: projectId || null })
     } else {
@@ -76,6 +83,21 @@ export function QuickAdd({ open, onClose }) {
           <Label>Title</Label>
           <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`New ${type}…`} />
         </div>
+
+        {type === 'task' && (
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={isHomework}
+              onChange={(e) => setIsHomework(e.target.checked)}
+              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div className="leading-tight">
+              <p className="text-sm font-medium text-zinc-800">Homework</p>
+              <p className="text-xs text-zinc-500">Pin to HW Tonight / This Week</p>
+            </div>
+          </label>
+        )}
 
         {type !== 'note' && (
           <div className="grid grid-cols-2 gap-3">

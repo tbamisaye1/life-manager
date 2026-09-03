@@ -47,6 +47,14 @@ export function isUnlocked(req) {
   const pin = expectedPin()
   const headerPin = req.get('x-life-manager-pin')
   if (headerPin && safeEqual(headerPin, pin)) return true
+  // MCP / API clients: Authorization: Bearer <APP_PIN or MCP_TOKEN>
+  const auth = req.get('authorization') || ''
+  const bearer = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+  if (bearer) {
+    if (safeEqual(bearer, pin)) return true
+    const mcpToken = process.env.MCP_TOKEN
+    if (typeof mcpToken === 'string' && mcpToken.length > 0 && safeEqual(bearer, mcpToken)) return true
+  }
   const cookies = parseCookies(req.get('cookie') || '')
   return safeEqual(cookies[COOKIE], unlockToken())
 }

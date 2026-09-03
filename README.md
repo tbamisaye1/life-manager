@@ -6,14 +6,15 @@ Clone it and you get demo seed data on local PGlite. That is not my production d
 
 ## Features
 
-- Today / schedule
-- Tasks and projects
+- Today / schedule (Tonight, This week, Homework Tonight / This week)
+- Tasks and projects (mark any task as homework)
 - Calendar (recurring + flagship days)
 - Nested notes (TipTap)
 - Pinboard
 - Gym and rugby logs
 - Email / reply queue
 - In-app AI assistant (LangGraph ReAct agent, OpenAI tools)
+- **Remote MCP server** (`/api/mcp`) so Claude.ai can manage tasks over HTTPS — see [MCP.md](./MCP.md)
 - Optional Google Calendar + Gmail, Outlook, Notion
 
 ## Stack

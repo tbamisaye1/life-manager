@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { AlertCircle, Sun, Mail, MessageSquare } from 'lucide-react'
+import { AlertCircle, Moon, BookOpen, CalendarRange } from 'lucide-react'
 import { formatDate } from '../../lib/format'
 
 function greeting() {
@@ -34,10 +34,10 @@ export function TodayHero({ counts }) {
       <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-zinc-900">{greeting()} 👋</h1>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat to="/tasks" icon={AlertCircle} value={counts.overdue} label="Overdue" tone="bg-red-50 text-red-500" />
-        <Stat to="/tasks" icon={Sun} value={counts.dueToday} label="Due today" tone="bg-amber-50 text-amber-500" />
-        <Stat to="/email" icon={Mail} value={counts.needsReply} label="To reply" tone="bg-blue-50 text-blue-500" />
-        <Stat to="/replies" icon={MessageSquare} value={counts.replyQueue} label="Messages" tone="bg-violet-50 text-violet-500" />
+        <Stat to="/tasks?filter=overdue" icon={AlertCircle} value={counts.overdue || 0} label="Overdue" tone="bg-red-50 text-red-500" />
+        <Stat to="/tasks?filter=tonight" icon={Moon} value={counts.dueToday || 0} label="Tonight" tone="bg-amber-50 text-amber-500" />
+        <Stat to="/tasks?filter=homework_tonight" icon={BookOpen} value={counts.homeworkTonight || 0} label="HW tonight" tone="bg-indigo-50 text-indigo-600" />
+        <Stat to="/tasks?filter=week" icon={CalendarRange} value={(counts.dueToday || 0) + (counts.dueThisWeek || 0)} label="This week" tone="bg-emerald-50 text-emerald-600" />
       </div>
     </div>
   )

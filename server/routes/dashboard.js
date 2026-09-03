@@ -33,6 +33,13 @@ router.get('/today', async (req, res) => {
     WHERE t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date > @end AND t.due_date <= @weekEnd
     ORDER BY t.due_date`).all({ end: todayEnd, weekEnd })
 
+  // Homework due tonight (today) and homework due later this week (not including today).
+  const homeworkTonight = dueToday.filter((t) => Number(t.is_homework) === 1)
+  const homeworkThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+    WHERE t.status != 'done' AND t.is_homework = 1 AND t.due_date IS NOT NULL
+      AND substr(t.due_date,1,10) >= @date AND t.due_date <= @weekEnd
+    ORDER BY t.due_date`).all({ date: todayDate, weekEnd })
+
   const priorities = await db.prepare('SELECT * FROM priorities WHERE active = 1 ORDER BY sort_order').all()
   const needsReply = (await db.prepare('SELECT COUNT(*) c FROM emails WHERE needs_reply = 1').get()).c
   const replyQueue = (await db.prepare('SELECT COUNT(*) c FROM reply_queue WHERE done = 0').get()).c
@@ -48,9 +55,20 @@ router.get('/today', async (req, res) => {
     dueToday,
     overdue,
     dueThisWeek,
+    homeworkTonight,
+    homeworkThisWeek,
     pinned,
     priorities: priorities.map((p) => ({ ...p, done_for_period: isDoneForPeriod(p) })),
-    counts: { needsReply, replyQueue, overdue: overdue.length, dueToday: dueToday.length, dueThisWeek: dueThisWeek.length, pinned: pinned.length },
+    counts: {
+      needsReply,
+      replyQueue,
+      overdue: overdue.length,
+      dueToday: dueToday.length,
+      dueThisWeek: dueThisWeek.length,
+      homeworkTonight: homeworkTonight.length,
+      homeworkThisWeek: homeworkThisWeek.length,
+      pinned: pinned.length,
+    },
   })
 })
 

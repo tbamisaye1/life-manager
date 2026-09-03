@@ -1,4 +1,4 @@
-import { Repeat } from 'lucide-react'
+import { Repeat, BookOpen } from 'lucide-react'
 import { Checkbox } from '../ui/Checkbox'
 import { DeadlineBadge } from '../ui/DeadlineBadge'
 import { ProjectTag } from '../ui/ProjectTag'
@@ -9,6 +9,7 @@ const RECURRENCE_LABEL = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' 
 /** One task row — checkbox, title, project, deadline badge. Notion-style. */
 export function TaskRow({ task, onToggle, onOpen }) {
   const done = task.status === 'done'
+  const homework = Number(task.is_homework) === 1 || task.is_homework === true
   return (
     <div className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-zinc-50">
       <Checkbox checked={done} onChange={() => onToggle(task)} label={`Complete ${task.title}`} />
@@ -22,6 +23,11 @@ export function TaskRow({ task, onToggle, onOpen }) {
         <span className={cn('truncate text-sm', done ? 'text-zinc-400 line-through' : 'text-zinc-800')}>
           {task.title}
         </span>
+        {homework && (
+          <span className="hidden shrink-0 items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600 sm:inline-flex">
+            <BookOpen className="h-3 w-3" /> HW
+          </span>
+        )}
         {task.recurrence && task.recurrence !== 'single' && (
           <span className="hidden shrink-0 items-center gap-1 text-xs text-zinc-400 sm:flex">
             <Repeat className="h-3 w-3" /> {RECURRENCE_LABEL[task.recurrence]}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, Sun, Calendar, ListChecks, CalendarClock } from 'lucide-react'
+import { AlertCircle, Sun, Calendar, ListChecks, CalendarClock, BookOpen, Moon } from 'lucide-react'
 import { Loading, ErrorState, EmptyState } from '../components/ui'
 import { SectionCard } from '../components/shared/SectionCard'
 import { TodayHero } from '../components/today/TodayHero'
@@ -19,7 +19,16 @@ export default function TodayPage() {
   if (isLoading) return <Loading label="Loading your day…" />
   if (isError) return <ErrorState message="Couldn't load Today" onRetry={refetch} />
 
-  const { events, dueToday, overdue, dueThisWeek = [], priorities, counts } = data
+  const {
+    events,
+    dueToday,
+    overdue,
+    dueThisWeek = [],
+    homeworkTonight = [],
+    homeworkThisWeek = [],
+    priorities,
+    counts,
+  } = data
 
   return (
     <div>
@@ -28,7 +37,7 @@ export default function TodayPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           {overdue.length > 0 && (
-            <SectionCard title="Needs attention" icon={AlertCircle} count={overdue.length} to="/tasks">
+            <SectionCard title="Needs attention" icon={AlertCircle} count={overdue.length} to="/tasks?filter=overdue">
               <div className="divide-y divide-zinc-100">
                 {overdue.slice(0, 5).map((t) => (
                   <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />
@@ -37,9 +46,37 @@ export default function TodayPage() {
             </SectionCard>
           )}
 
-          <SectionCard title="Due today" icon={Sun} count={dueToday.length} to="/tasks">
+          {(homeworkTonight.length > 0 || homeworkThisWeek.length > 0) && (
+            <SectionCard
+              title="Homework"
+              icon={BookOpen}
+              count={homeworkThisWeek.length}
+              to="/tasks?filter=homework_week"
+            >
+              <div className="divide-y divide-zinc-100">
+                {homeworkTonight.length > 0 && (
+                  <div className="bg-indigo-50/60 px-3 py-2">
+                    <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                      <Moon className="h-3.5 w-3.5" /> Tonight
+                    </p>
+                    {homeworkTonight.map((t) => (
+                      <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />
+                    ))}
+                  </div>
+                )}
+                {homeworkThisWeek
+                  .filter((t) => !homeworkTonight.some((h) => h.id === t.id))
+                  .slice(0, 6)
+                  .map((t) => (
+                    <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />
+                  ))}
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard title="Due tonight" icon={Sun} count={dueToday.length} to="/tasks?filter=tonight">
             {dueToday.length === 0 ? (
-              <div className="px-3 py-6 text-center text-sm text-zinc-400">Nothing due today 🎉</div>
+              <div className="px-3 py-6 text-center text-sm text-zinc-400">Nothing due tonight 🎉</div>
             ) : (
               <div className="divide-y divide-zinc-100">
                 {dueToday.map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />)}
@@ -48,9 +85,9 @@ export default function TodayPage() {
           </SectionCard>
 
           {dueThisWeek.length > 0 && (
-            <SectionCard title="Coming up this week" icon={CalendarClock} count={dueThisWeek.length} to="/tasks">
+            <SectionCard title="This week" icon={CalendarClock} count={dueThisWeek.length} to="/tasks?filter=week">
               <div className="divide-y divide-zinc-100">
-                {dueThisWeek.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />)}
+                {dueThisWeek.slice(0, 8).map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={setSelected} />)}
               </div>
             </SectionCard>
           )}
