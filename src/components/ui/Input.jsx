@@ -9,7 +9,7 @@ export function Input({ className, ...props }) {
 }
 
 export function Textarea({ className, ...props }) {
-  return <textarea className={cn(baseField, 'min-h-[80px] resize-y', className)} {...props} />
+  return <textarea className={cn(baseField, 'min-h-[120px] resize-y', className)} {...props} />
 }
 
 export function Select({ className, children, ...props }) {

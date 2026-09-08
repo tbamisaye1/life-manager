@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { Modal, Button, Input, Textarea, Select, Label } from '../ui'
+import { Modal, Button, Input, Select, Label } from '../ui'
 import { NestedPagesPanel } from '../pages/NestedPagesPanel'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
+import { cn } from '../../lib/cn'
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent']
 const RECURRENCES = ['single', 'daily', 'weekly', 'monthly']
@@ -11,6 +12,34 @@ const RECURRENCES = ['single', 'daily', 'weekly', 'monthly']
 const toInputValue = (iso) => {
   if (!iso) return ''
   return iso.length > 10 ? iso.slice(0, 16) : iso
+}
+
+/** Notes field that grows with the checklist instead of trapping it in 80px. */
+function NotesEditor({ value, onChange, placeholder }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    const next = Math.min(Math.max(el.scrollHeight, 220), Math.floor(window.innerHeight * 0.55))
+    el.style.height = `${next}px`
+  }, [value])
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      spellCheck={false}
+      className={cn(
+        'w-full resize-y rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-3',
+        'font-mono text-[13px] leading-relaxed text-zinc-800 placeholder:text-zinc-400',
+        'focus-ring focus:border-accent-500 focus:bg-white',
+        'min-h-[14rem] overflow-y-auto whitespace-pre-wrap',
+      )}
+    />
+  )
 }
 
 /**
@@ -49,6 +78,8 @@ export function TaskDetailModal({ task, open, onClose }) {
       open={open}
       onClose={onClose}
       title="Task"
+      className="max-w-2xl"
+      bodyClassName="max-h-[min(78vh,44rem)]"
       footer={
         <>
           <Button variant="danger" onClick={del} className="mr-auto">
@@ -116,8 +147,15 @@ export function TaskDetailModal({ task, open, onClose }) {
         </div>
 
         <div>
-          <Label>Notes</Label>
-          <Textarea value={draft.notes || ''} onChange={(e) => set({ notes: e.target.value })} placeholder="Add detail…" />
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <Label className="mb-0">Notes / checklist</Label>
+            <span className="text-[11px] text-zinc-400">Scrolls only if taller than half the screen</span>
+          </div>
+          <NotesEditor
+            value={draft.notes || ''}
+            onChange={(e) => set({ notes: e.target.value })}
+            placeholder="GOAL, DO THIS, DONE WHEN…"
+          />
         </div>
 
         {task.id && (
