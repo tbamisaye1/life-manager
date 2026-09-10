@@ -4,8 +4,31 @@ import { differenceInCalendarDays, parseISO } from 'date-fns'
 // UI so Today, Tasks, Projects, and mobile can share the same rules.
 const daysUntil = (due) => differenceInCalendarDays(parseISO(due), new Date())
 
+export const CUSTOM_DAYS_MIN = 1
+export const CUSTOM_DAYS_MAX = 30
+
 function isHomework(task) {
   return Number(task.is_homework) === 1 || task.is_homework === true
+}
+
+/** Parse `next_3` / `homework_next_3` (or legacy hw aliases). */
+export function parseNextFilter(filter) {
+  const m = String(filter || '').match(/^(?:homework_|hw_)?next_(\d+)$/)
+  if (!m) return null
+  const days = Number(m[1])
+  if (!Number.isFinite(days) || days < CUSTOM_DAYS_MIN || days > CUSTOM_DAYS_MAX) return null
+  const homework = /^(?:homework_|hw_)/.test(filter)
+  return { days, homework, key: nextFilterKey(days, homework) }
+}
+
+export function nextFilterKey(days, homework = false) {
+  const n = Math.min(CUSTOM_DAYS_MAX, Math.max(CUSTOM_DAYS_MIN, Number(days) || 1))
+  return homework ? `homework_next_${n}` : `next_${n}`
+}
+
+export function isValidTaskFilter(filter, presetKeys = []) {
+  if (presetKeys.includes(filter)) return true
+  return parseNextFilter(filter) != null
 }
 
 export function matchesFilter(task, filter) {
@@ -13,6 +36,14 @@ export function matchesFilter(task, filter) {
   if (task.status === 'done') return false // active filters exclude completed
   if (filter === 'all') return true
   if (filter === 'homework') return isHomework(task)
+
+  const next = parseNextFilter(filter)
+  if (next) {
+    if (next.homework && !isHomework(task)) return false
+    if (!task.due_date) return false
+    const d = daysUntil(task.due_date)
+    return d >= 0 && d <= next.days
+  }
 
   const hwOnly =
     filter === 'homework_tonight' ||
@@ -51,6 +82,10 @@ export function matchesFilter(task, filter) {
 
 export function filterTasks(tasks, filter) {
   return tasks.filter((t) => matchesFilter(t, filter))
+}
+
+export function countForFilter(tasks, filter) {
+  return tasks.filter((t) => matchesFilter(t, filter)).length
 }
 
 export function taskCounts(tasks) {

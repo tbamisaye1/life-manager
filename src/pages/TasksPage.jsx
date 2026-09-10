@@ -8,14 +8,25 @@ import { TaskDetailModal } from '../components/tasks/TaskDetailModal'
 import { TASK_FILTERS } from '../components/tasks/taskFilterConfig'
 import { tasks as tasksResource } from '../hooks/resources'
 import { useToggleTask } from '../hooks/useTaskActions'
-import { filterTasks, taskCounts } from '../lib/taskFilters'
+import { filterTasks, isValidTaskFilter, parseNextFilter, taskCounts } from '../lib/taskFilters'
 
-const VALID = new Set(TASK_FILTERS.map((f) => f.key))
+const PRESET_KEYS = TASK_FILTERS.map((f) => f.key)
+
+function filterLabel(filter) {
+  const next = parseNextFilter(filter)
+  if (next) {
+    const unit = next.days === 1 ? 'day' : 'days'
+    return next.homework
+      ? `No homework due in the next ${next.days} ${unit}.`
+      : `No tasks due in the next ${next.days} ${unit}.`
+  }
+  return 'No tasks match this filter.'
+}
 
 export default function TasksPage() {
   const [params, setParams] = useSearchParams()
   const filterFromUrl = params.get('filter')
-  const filter = VALID.has(filterFromUrl) ? filterFromUrl : 'all'
+  const filter = isValidTaskFilter(filterFromUrl, PRESET_KEYS) ? filterFromUrl : 'all'
   const [selected, setSelected] = useState(null)
   const { data: tasks = [], isLoading, isError, refetch } = tasksResource.useList()
   const toggle = useToggleTask()
@@ -37,19 +48,19 @@ export default function TasksPage() {
     <div>
       <NavPageHeader
         path="/tasks"
-        subtitle="Tonight, this week, and homework — one click away."
+        subtitle="Tonight, this week, or the next N days — homework or everything."
         icon={CheckSquare}
       />
 
-      <div className="mb-4">
-        <TaskFilters value={filter} onChange={setFilter} counts={counts} />
+      <div className="mb-5">
+        <TaskFilters value={filter} onChange={setFilter} counts={counts} tasks={tasks} />
       </div>
 
       {visible.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
           title={filter === 'done' ? 'Nothing completed yet' : 'All clear here'}
-          description={filter === 'all' ? 'Press “n” or the New button to add your first task.' : 'No tasks match this filter.'}
+          description={filter === 'all' ? 'Press “n” or the New button to add your first task.' : filterLabel(filter)}
         />
       ) : (
         <TaskList tasks={visible} onToggle={toggle} onOpen={setSelected} />
