@@ -16,9 +16,9 @@ function filterLabel(filter) {
   const next = parseNextFilter(filter)
   if (next) {
     const unit = next.days === 1 ? 'day' : 'days'
-    return next.homework
-      ? `No homework due in the next ${next.days} ${unit}.`
-      : `No tasks due in the next ${next.days} ${unit}.`
+    if (next.scope === 'homework') return `No homework due in the next ${next.days} ${unit}.`
+    if (next.scope === 'tasks') return `No non-homework tasks due in the next ${next.days} ${unit}.`
+    return `Nothing due in the next ${next.days} ${unit}.`
   }
   return 'No tasks match this filter.'
 }
@@ -48,7 +48,7 @@ export default function TasksPage() {
     <div>
       <NavPageHeader
         path="/tasks"
-        subtitle="Tonight, this week, or the next N days — homework or everything."
+        subtitle="Tonight, this week, or the next N days — all, tasks, or homework."
         icon={CheckSquare}
       />
 

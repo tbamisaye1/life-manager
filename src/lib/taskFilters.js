@@ -6,24 +6,29 @@ const daysUntil = (due) => differenceInCalendarDays(parseISO(due), new Date())
 
 export const CUSTOM_DAYS_MIN = 1
 export const CUSTOM_DAYS_MAX = 30
+export const NEXT_SCOPES = ['all', 'tasks', 'homework']
 
 function isHomework(task) {
   return Number(task.is_homework) === 1 || task.is_homework === true
 }
 
-/** Parse `next_3` / `homework_next_3` (or legacy hw aliases). */
+/** Parse `next_3` / `tasks_next_3` / `homework_next_3` (and legacy hw_ aliases). */
 export function parseNextFilter(filter) {
-  const m = String(filter || '').match(/^(?:homework_|hw_)?next_(\d+)$/)
+  const m = String(filter || '').match(/^(?:(homework|hw|tasks)_)?next_(\d+)$/)
   if (!m) return null
-  const days = Number(m[1])
+  const days = Number(m[2])
   if (!Number.isFinite(days) || days < CUSTOM_DAYS_MIN || days > CUSTOM_DAYS_MAX) return null
-  const homework = /^(?:homework_|hw_)/.test(filter)
-  return { days, homework, key: nextFilterKey(days, homework) }
+  const prefix = m[1]
+  const scope = prefix === 'homework' || prefix === 'hw' ? 'homework' : prefix === 'tasks' ? 'tasks' : 'all'
+  return { days, scope, homework: scope === 'homework', key: nextFilterKey(days, scope) }
 }
 
-export function nextFilterKey(days, homework = false) {
+export function nextFilterKey(days, scope = 'all') {
   const n = Math.min(CUSTOM_DAYS_MAX, Math.max(CUSTOM_DAYS_MIN, Number(days) || 1))
-  return homework ? `homework_next_${n}` : `next_${n}`
+  const s = NEXT_SCOPES.includes(scope) ? scope : 'all'
+  if (s === 'homework') return `homework_next_${n}`
+  if (s === 'tasks') return `tasks_next_${n}`
+  return `next_${n}`
 }
 
 export function isValidTaskFilter(filter, presetKeys = []) {
@@ -39,7 +44,8 @@ export function matchesFilter(task, filter) {
 
   const next = parseNextFilter(filter)
   if (next) {
-    if (next.homework && !isHomework(task)) return false
+    if (next.scope === 'homework' && !isHomework(task)) return false
+    if (next.scope === 'tasks' && isHomework(task)) return false
     if (!task.due_date) return false
     const d = daysUntil(task.due_date)
     return d >= 0 && d <= next.days

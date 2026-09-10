@@ -80,19 +80,23 @@ function Stepper({ value, onChange, active }) {
   )
 }
 
-/** Segmented filter tabs + custom N-day range for tasks / homework. */
+const SCOPE_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'homework', label: 'Homework' },
+]
+
+/** Segmented filter tabs + custom N-day range for all / tasks / homework. */
 export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
   const custom = parseNextFilter(value)
   const days = custom?.days ?? 3
-  const homeworkOnly = custom?.homework ?? false
+  const scope = custom?.scope ?? 'all'
   const customActive = custom != null
-  const customKey = nextFilterKey(days, homeworkOnly)
-  const customCount = customActive
-    ? countForFilter(tasks, customKey)
-    : countForFilter(tasks, nextFilterKey(days, homeworkOnly))
+  const customKey = nextFilterKey(days, scope)
+  const customCount = countForFilter(tasks, customKey)
 
-  const setCustom = (nextDays, nextHomework) => {
-    onChange(nextFilterKey(nextDays, nextHomework))
+  const setCustom = (nextDays, nextScope) => {
+    onChange(nextFilterKey(nextDays, nextScope))
   }
 
   return (
@@ -125,7 +129,7 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
       >
         <button
           type="button"
-          onClick={() => setCustom(days, homeworkOnly)}
+          onClick={() => setCustom(days, scope)}
           className={cn(
             'text-xs font-semibold uppercase tracking-wide transition-colors focus-ring rounded',
             customActive ? 'text-accent-700' : 'text-zinc-500 hover:text-zinc-700',
@@ -134,7 +138,7 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
           Due in next
         </button>
 
-        <Stepper value={days} active={customActive} onChange={(n) => setCustom(n, homeworkOnly)} />
+        <Stepper value={days} active={customActive} onChange={(n) => setCustom(n, scope)} />
 
         <span className="text-sm text-zinc-500">{days === 1 ? 'day' : 'days'}</span>
 
@@ -143,7 +147,7 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
             <button
               key={n}
               type="button"
-              onClick={() => setCustom(n, homeworkOnly)}
+              onClick={() => setCustom(n, scope)}
               className={cn(
                 'h-7 min-w-7 rounded-md px-2 text-xs font-medium tabular-nums transition-colors focus-ring',
                 customActive && days === n
@@ -158,30 +162,21 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
 
         <div className="ml-auto flex items-center gap-2">
           <div className="inline-flex rounded-lg bg-white p-0.5 shadow-sm ring-1 ring-zinc-200/80">
-            <button
-              type="button"
-              onClick={() => setCustom(days, false)}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-ring',
-                customActive && !homeworkOnly
-                  ? 'bg-accent-600 text-white'
-                  : 'text-zinc-500 hover:text-zinc-800',
-              )}
-            >
-              Tasks
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustom(days, true)}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-ring',
-                customActive && homeworkOnly
-                  ? 'bg-accent-600 text-white'
-                  : 'text-zinc-500 hover:text-zinc-800',
-              )}
-            >
-              Homework
-            </button>
+            {SCOPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setCustom(days, opt.key)}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-ring',
+                  customActive && scope === opt.key
+                    ? 'bg-accent-600 text-white'
+                    : 'text-zinc-500 hover:text-zinc-800',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
           {customCount > 0 && (
