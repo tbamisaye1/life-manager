@@ -3,13 +3,13 @@ import { Checkbox } from '../ui/Checkbox'
 import { DeadlineBadge } from '../ui/DeadlineBadge'
 import { ProjectTag } from '../ui/ProjectTag'
 import { cn } from '../../lib/cn'
-
-const RECURRENCE_LABEL = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' }
+import { formatRecurrenceLabel } from '../../lib/taskRecurrence'
 
 /** One task row — checkbox, title, project, deadline badge. Notion-style. */
 export function TaskRow({ task, onToggle, onOpen }) {
   const done = task.status === 'done'
   const homework = Number(task.is_homework) === 1 || task.is_homework === true
+  const recurrenceLabel = formatRecurrenceLabel(task.recurrence)
   return (
     <div className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-zinc-50">
       <Checkbox checked={done} onChange={() => onToggle(task)} label={`Complete ${task.title}`} />
@@ -28,9 +28,9 @@ export function TaskRow({ task, onToggle, onOpen }) {
             <BookOpen className="h-3 w-3" /> HW
           </span>
         )}
-        {task.recurrence && task.recurrence !== 'single' && (
+        {recurrenceLabel && (
           <span className="hidden shrink-0 items-center gap-1 text-xs text-zinc-400 sm:flex">
-            <Repeat className="h-3 w-3" /> {RECURRENCE_LABEL[task.recurrence]}
+            <Repeat className="h-3 w-3" /> {recurrenceLabel}
           </span>
         )}
       </button>

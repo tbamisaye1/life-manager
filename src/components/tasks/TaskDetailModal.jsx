@@ -4,14 +4,29 @@ import { Modal, Button, Input, Select, Label } from '../ui'
 import { NestedPagesPanel } from '../pages/NestedPagesPanel'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
 import { cn } from '../../lib/cn'
+import {
+  DOW_LABEL,
+  RECURRENCE_FREQUENCIES,
+  parseRecurrence,
+  serializeRecurrence,
+} from '../../lib/taskRecurrence'
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent']
-const RECURRENCES = ['single', 'daily', 'weekly', 'monthly']
+const WD = DOW_LABEL.map((l, v) => ({ v, l: l[0] }))
 
 // Convert an ISO value to the value a datetime-local / date input expects.
 const toInputValue = (iso) => {
   if (!iso) return ''
   return iso.length > 10 ? iso.slice(0, 16) : iso
+}
+
+function initDraft(task) {
+  const { frequency, weekdays } = parseRecurrence(task?.recurrence)
+  return {
+    ...task,
+    recurrenceFreq: frequency || 'single',
+    weekdays: weekdays || [],
+  }
 }
 
 /** Notes field that grows with the checklist instead of trapping it in 80px. */
@@ -47,7 +62,7 @@ function NotesEditor({ value, onChange, placeholder }) {
  * remounts per task and initializes its draft cleanly — no sync effect needed.
  */
 export function TaskDetailModal({ task, open, onClose }) {
-  const [draft, setDraft] = useState(task || {})
+  const [draft, setDraft] = useState(() => initDraft(task))
   const { data: projectList = [] } = projectsResource.useList()
   const update = tasks.useUpdate()
   const remove = tasks.useRemove()
@@ -55,6 +70,7 @@ export function TaskDetailModal({ task, open, onClose }) {
   if (!task) return null
 
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }))
+  const showDays = draft.recurrenceFreq && draft.recurrenceFreq !== 'single'
 
   const save = async () => {
     await update.mutateAsync({
@@ -62,7 +78,10 @@ export function TaskDetailModal({ task, open, onClose }) {
       title: draft.title,
       due_date: draft.due_date || null,
       priority: draft.priority,
-      recurrence: draft.recurrence,
+      recurrence: serializeRecurrence({
+        frequency: draft.recurrenceFreq,
+        weekdays: showDays ? draft.weekdays : null,
+      }),
       project_id: draft.project_id || null,
       notes: draft.notes || '',
       is_homework: draft.is_homework ? 1 : 0,
@@ -140,11 +159,50 @@ export function TaskDetailModal({ task, open, onClose }) {
           </div>
           <div>
             <Label>Repeats</Label>
-            <Select value={draft.recurrence || 'single'} onChange={(e) => set({ recurrence: e.target.value })}>
-              {RECURRENCES.map((r) => <option key={r} value={r}>{r === 'single' ? 'Does not repeat' : r[0].toUpperCase() + r.slice(1)}</option>)}
+            <Select
+              value={draft.recurrenceFreq || 'single'}
+              onChange={(e) => set({
+                recurrenceFreq: e.target.value,
+                weekdays: e.target.value === 'single' ? [] : draft.weekdays,
+              })}
+            >
+              {RECURRENCE_FREQUENCIES.map((r) => (
+                <option key={r} value={r}>{r === 'single' ? 'Does not repeat' : r[0].toUpperCase() + r.slice(1)}</option>
+              ))}
             </Select>
           </div>
         </div>
+
+        {showDays && (
+          <div>
+            <Label>On these days (optional)</Label>
+            <p className="mb-2 text-[11px] text-zinc-400">
+              Leave empty for every day / every week. Pick days for Mon/Fri/Sat/Sun style repeats.
+            </p>
+            <div className="flex gap-1.5">
+              {WD.map((d) => {
+                const on = draft.weekdays.includes(d.v)
+                return (
+                  <button
+                    key={d.v}
+                    type="button"
+                    onClick={() => set({
+                      weekdays: on
+                        ? draft.weekdays.filter((x) => x !== d.v)
+                        : [...draft.weekdays, d.v].sort((a, b) => a - b),
+                    })}
+                    className={cn(
+                      'h-8 w-8 rounded-full text-sm font-semibold',
+                      on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600',
+                    )}
+                  >
+                    {d.l}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="mb-1.5 flex items-baseline justify-between gap-2">

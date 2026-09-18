@@ -279,6 +279,101 @@ async function runTests() {
     ok('mcp update_task', data?.ok === true, JSON.stringify(data))
   }
 
+  // --- Recurrence (days_of_week) ---
+  console.log('\n--- Recurrence ---\n')
+
+  let recurTask
+  {
+    const r = await req('POST', '/api/tasks', {
+      title: 'TEST Recur Gym MonFriSatSun',
+      due_date: todayStr,
+      recurrence: 'weekly',
+      days_of_week: [1, 5, 6, 0],
+    })
+    recurTask = r.json
+    const stored = recurTask?.recurrence || ''
+    ok(
+      'REST create with days_of_week',
+      r.status === 201 && stored.includes('weekdays') && stored.includes('1'),
+      stored,
+    )
+  }
+
+  {
+    // Complete should roll to next matching weekday, stay open
+    const r = await req('PATCH', `/api/tasks/${recurTask.id}`, { status: 'done' })
+    const next = r.json?.due_date
+    ok('REST complete rolls recurring task', r.status === 200 && r.json?.status === 'todo' && !!next && next !== todayStr, JSON.stringify({ status: r.json?.status, due: next }))
+  }
+
+  {
+    const r = await mcp('tools/list', {}, 8)
+    const tools = r.json?.result?.tools
+      || (() => {
+        try {
+          const lines = (r.text || '').split('\n').filter((l) => l.startsWith('data:'))
+          for (const line of lines) {
+            const msg = JSON.parse(line.slice(5).trim())
+            if (msg?.result?.tools) return msg.result.tools
+          }
+        } catch { /* */ }
+        return []
+      })()
+    const create = tools.find((t) => t.name === 'create_task')
+    const update = tools.find((t) => t.name === 'update_task')
+    const createProps = create?.inputSchema?.properties || create?.input_schema?.properties || {}
+    const updateProps = update?.inputSchema?.properties || update?.input_schema?.properties || {}
+    ok('mcp create_task exposes days_of_week', 'days_of_week' in createProps, JSON.stringify(Object.keys(createProps)))
+    ok('mcp update_task exposes recurrence', 'recurrence' in updateProps, JSON.stringify(Object.keys(updateProps)))
+    ok('mcp update_task exposes days_of_week', 'days_of_week' in updateProps, JSON.stringify(Object.keys(updateProps)))
+  }
+
+  let mcpRecurId = null
+  {
+    const r = await mcp('tools/call', {
+      name: 'create_task',
+      arguments: {
+        title: 'TEST MCP Recur Stretch',
+        due_date: todayStr,
+        recurrence: 'weekly',
+        days_of_week: [1, 5, 6, 0],
+      },
+    }, 9)
+    const data = parseMcpToolResult(r)
+    mcpRecurId = data?.id
+    ok(
+      'mcp create_task with days_of_week',
+      data?.ok === true && String(data?.recurrence || '').includes('weekdays'),
+      JSON.stringify(data),
+    )
+  }
+
+  {
+    const r = await mcp('tools/call', {
+      name: 'update_task',
+      arguments: {
+        title: 'MCP Recur Stretch',
+        recurrence: 'weekly',
+        days_of_week: [2, 4],
+      },
+    }, 10)
+    const data = parseMcpToolResult(r)
+    ok(
+      'mcp update_task recurrence + days',
+      data?.ok === true && String(data?.recurrence || '').includes('2'),
+      JSON.stringify(data),
+    )
+  }
+
+  {
+    const r = await mcp('tools/call', {
+      name: 'complete_task',
+      arguments: { title: 'MCP Recur Stretch' },
+    }, 11)
+    const data = parseMcpToolResult(r)
+    ok('mcp complete_task rolls recurring', data?.ok === true && data?.rolled === true && !!data?.due_date, JSON.stringify(data))
+  }
+
   // Bearer auth specifically
   {
     const r = await fetch(`${BASE}/api/tasks`, {
@@ -295,6 +390,7 @@ async function runTests() {
     }
   }
   if (mcpCreatedId) await req('DELETE', `/api/tasks/${mcpCreatedId}`)
+  if (mcpRecurId) await req('DELETE', `/api/tasks/${mcpRecurId}`)
   ok('cleanup ran', true)
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`)

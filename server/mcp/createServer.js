@@ -14,6 +14,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { newId, now, localDateStr } from '../lib/helpers.js'
+import { advanceDue, encodeRecurrenceFields, isRecurring } from '../lib/taskRecurrence.js'
+
+const recurrenceEnum = z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly'])
+/** 0=Sun .. 6=Sat, same as calendar events. Also accepts mon/tue/… strings via encode. */
+const daysOfWeekSchema = z
+  .array(z.union([z.number().int().min(0).max(6), z.enum(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'])]))
+  .optional()
+  .describe('0=Sun..6=Sat (or sun/mon/…). Use with weekly/daily for e.g. Mon/Fri/Sat/Sun = [1,5,6,0]')
 
 // Qualify with t. — JOINs make bare `id` ambiguous.
 const TASK_COLS = `t.id, t.title, t.status, t.emoji, t.due_date, t.priority, t.recurrence, t.project_id, t.notes, t.is_homework, t.completed_at`
@@ -188,7 +196,7 @@ export function createLifeManagerMcpServer() {
     'create_task',
     {
       description:
-        'Create a task. Set is_homework=true for school assignments so they show in Homework Tonight / This week.',
+        'Create a task. Set is_homework=true for school assignments so they show in Homework Tonight / This week. For repeating tasks use recurrence plus optional days_of_week (e.g. weekly + [1,5,6,0] for Mon/Fri/Sat/Sun).',
       inputSchema: {
         title: z.string(),
         due_date: z.string().optional().describe('YYYY-MM-DD or local datetime'),
@@ -196,14 +204,16 @@ export function createLifeManagerMcpServer() {
         project: z.string().optional().describe('project name or short_code'),
         notes: z.string().optional(),
         is_homework: z.boolean().optional(),
-        recurrence: z.enum(['single', 'daily', 'weekly', 'monthly']).optional(),
+        recurrence: recurrenceEnum.optional(),
+        days_of_week: daysOfWeekSchema,
         emoji: z.string().optional(),
       },
     },
-    async ({ title, due_date, priority, project, notes, is_homework, recurrence, emoji }) => {
+    async ({ title, due_date, priority, project, notes, is_homework, recurrence, days_of_week, emoji }) => {
       const ts = now()
       const id = newId()
       const projectId = await resolveProjectId(project)
+      const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
       await db
         .prepare(
           `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
@@ -215,7 +225,7 @@ export function createLifeManagerMcpServer() {
           emoji: emoji || (is_homework ? '📚' : '📌'),
           due: due_date || null,
           priority: priority || 'normal',
-          recurrence: recurrence || 'single',
+          recurrence: recurrenceValue,
           pid: projectId,
           notes: notes || '',
           hw: homeworkFlag(is_homework),
@@ -226,6 +236,7 @@ export function createLifeManagerMcpServer() {
         id,
         title: title.trim(),
         due_date: due_date || null,
+        recurrence: recurrenceValue,
         is_homework: !!homeworkFlag(is_homework),
       })
     },
@@ -235,7 +246,7 @@ export function createLifeManagerMcpServer() {
     'update_task',
     {
       description:
-        'Update a task found by title fragment (or by id). Can rename, change due date, priority, notes, homework flag, status, project.',
+        'Update a task found by title fragment (or by id). Can rename, change due date, priority, notes, homework flag, status, project, recurrence, or days_of_week.',
       inputSchema: {
         title: z.string().optional().describe('title fragment to find the task'),
         id: z.string().optional().describe('task id if known'),
@@ -246,6 +257,8 @@ export function createLifeManagerMcpServer() {
         notes: z.string().optional(),
         is_homework: z.boolean().optional(),
         project: z.string().optional().describe('project name/short_code; empty string clears'),
+        recurrence: recurrenceEnum.optional(),
+        days_of_week: daysOfWeekSchema,
       },
     },
     async (args) => {
@@ -286,16 +299,29 @@ export function createLifeManagerMcpServer() {
         sets.push('project_id = @pid')
         p.pid = args.project === '' ? null : await resolveProjectId(args.project)
       }
+      if (args.recurrence !== undefined || args.days_of_week !== undefined) {
+        sets.push('recurrence = @recurrence')
+        p.recurrence = encodeRecurrenceFields(
+          args.recurrence ?? task.recurrence,
+          args.days_of_week,
+        )
+      }
       if (!sets.length) return jsonResult({ ok: false, message: 'Nothing to update.' })
       await db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
-      return jsonResult({ ok: true, id: task.id, title: args.new_title || task.title })
+      return jsonResult({
+        ok: true,
+        id: task.id,
+        title: args.new_title || task.title,
+        recurrence: p.recurrence,
+      })
     },
   )
 
   server.registerTool(
     'complete_task',
     {
-      description: 'Mark an open task done (by title fragment or id).',
+      description:
+        'Mark an open task done (by title fragment or id). Recurring tasks roll due_date to the next occurrence and stay open.',
       inputSchema: {
         title: z.string().optional(),
         id: z.string().optional(),
@@ -306,9 +332,19 @@ export function createLifeManagerMcpServer() {
       if (id) task = await db.prepare(`SELECT ${TASK_COLS_PLAIN} FROM tasks WHERE id = ?`).get(id)
       else if (title) task = await findTaskByTitle(title, true)
       if (!task) return jsonResult({ ok: false, message: 'Open task not found.' })
+      const ts = now()
+      if (isRecurring(task.recurrence)) {
+        const nextDue = advanceDue(task.due_date, task.recurrence)
+        await db
+          .prepare(
+            `UPDATE tasks SET status = 'todo', due_date = @due, completed_at = NULL, updated_at = @ts WHERE id = @id`,
+          )
+          .run({ id: task.id, due: nextDue, ts })
+        return jsonResult({ ok: true, id: task.id, title: task.title, rolled: true, due_date: nextDue })
+      }
       await db
         .prepare(`UPDATE tasks SET status = 'done', completed_at = @ts, updated_at = @ts WHERE id = @id`)
-        .run({ id: task.id, ts: now() })
+        .run({ id: task.id, ts })
       return jsonResult({ ok: true, id: task.id, title: task.title })
     },
   )

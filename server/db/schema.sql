@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   emoji         TEXT,
   due_date      TEXT,                            -- ISO date/datetime
   priority      TEXT NOT NULL DEFAULT 'normal',  -- low | normal | high | urgent
-  recurrence    TEXT NOT NULL DEFAULT 'single',  -- single | daily | weekly | monthly
+  recurrence    TEXT NOT NULL DEFAULT 'single',  -- single|daily|weekly|monthly|yearly OR JSON {"frequency","weekdays"}
   project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
   notes         TEXT,
   is_homework   INTEGER NOT NULL DEFAULT 0,      -- 1 = school homework (Tonight / This week views)

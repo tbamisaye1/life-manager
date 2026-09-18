@@ -4,6 +4,7 @@ import { db } from '../../db/index.js'
 import { newId, now, localDateStr } from '../helpers.js'
 import { firstFreeSlot, addMinutes, resolveProjectId, findEvents, removeEventById } from './tools-shared.js'
 import { expandRecurrence } from '../recurrence.js'
+import { advanceDue, encodeRecurrenceFields, isRecurring } from '../taskRecurrence.js'
 import * as googleI from '../../integrations/google.js'
 import { buildGymTools } from './tools-gym.js'
 import { buildNotesTools } from './tools-notes.js'
@@ -12,6 +13,12 @@ import { buildProjectTools } from './tools-projects.js'
 import { buildListTools } from './tools-lists.js'
 import { buildInboxTools } from './tools-inbox.js'
 import { buildPinsTools } from './tools-pins.js'
+
+const recurrenceEnum = z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly'])
+const daysOfWeekSchema = z
+  .array(z.union([z.number().int().min(0).max(6), z.enum(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'])]))
+  .optional()
+  .describe('0=Sun..6=Sat; e.g. Mon/Fri/Sat/Sun = [1,5,6,0]')
 
 /**
  * Build the agent's full toolset. Each tool that changes something calls
@@ -164,32 +171,34 @@ export function buildTools(record) {
   )
 
   const createTask = tool(
-    async ({ title, due_date, priority, project, notes, recurrence, emoji, is_homework }) => {
+    async ({ title, due_date, priority, project, notes, recurrence, days_of_week, emoji, is_homework }) => {
       const ts = now()
       const id = newId()
       const projectId = await resolveProjectId(project)
       const hw = is_homework ? 1 : 0
+      const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
       await db
         .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
           VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,'assistant',@ts,@ts)`)
         .run({
           id, title, emoji: emoji || (hw ? '📚' : '📌'), due: due_date || null,
-          priority: priority || 'normal', recurrence: recurrence || 'single',
+          priority: priority || 'normal', recurrence: recurrenceValue,
           pid: projectId, notes: notes || '', hw, ts,
         })
       record(`✅ Added task “${title}”${priority && priority !== 'normal' ? ` (${priority})` : ''}${hw ? ' · homework' : ''}`)
-      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', is_homework: !!hw })
+      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', recurrence: recurrenceValue, is_homework: !!hw })
     },
     {
       name: 'create_task',
-      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence if it repeats, and is_homework=true for school assignments.',
+      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence (+ optional days_of_week) if it repeats, and is_homework=true for school assignments.',
       schema: z.object({
         title: z.string(),
         due_date: z.string().optional().describe('local datetime; optional'),
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         project: z.string().optional().describe('project name to attach to, if mentioned'),
         notes: z.string().optional().describe('description / extra detail'),
-        recurrence: z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+        recurrence: recurrenceEnum.optional(),
+        days_of_week: daysOfWeekSchema,
         emoji: z.string().optional(),
         is_homework: z.boolean().optional().describe('true for school homework'),
       }),
@@ -226,11 +235,11 @@ export function buildTools(record) {
     const clause = words.map(() => 'title ILIKE ?').join(' AND ') || 'title ILIKE ?'
     const params = words.length ? words.map((w) => `%${w}%`) : [`%${title}%`]
     const guard = openOnly ? "status != 'done' AND " : ''
-    return db.prepare(`SELECT id, title FROM tasks WHERE ${guard}${clause} ORDER BY created_at DESC LIMIT 1`).get(...params)
+    return db.prepare(`SELECT id, title, due_date, recurrence FROM tasks WHERE ${guard}${clause} ORDER BY created_at DESC LIMIT 1`).get(...params)
   }
 
   const updateTask = tool(
-    async ({ title, new_title, due_date, priority, status, notes, recurrence, project, is_homework }) => {
+    async ({ title, new_title, due_date, priority, status, notes, recurrence, days_of_week, project, is_homework }) => {
       const task = await findTask(title, false)
       if (!task) return JSON.stringify({ ok: false, message: `No task matching "${title}".` })
       const sets = []
@@ -240,17 +249,20 @@ export function buildTools(record) {
       if (priority) { sets.push('priority = @priority'); p.priority = priority }
       if (status) { sets.push('status = @status'); p.status = status; if (status === 'done') sets.push('completed_at = @ts') }
       if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
-      if (recurrence) { sets.push('recurrence = @recurrence'); p.recurrence = recurrence }
+      if (recurrence !== undefined || days_of_week !== undefined) {
+        sets.push('recurrence = @recurrence')
+        p.recurrence = encodeRecurrenceFields(recurrence ?? task.recurrence, days_of_week)
+      }
       if (project !== undefined) { sets.push('project_id = @pid'); p.pid = await resolveProjectId(project) }
       if (is_homework !== undefined) { sets.push('is_homework = @hw'); p.hw = is_homework ? 1 : 0 }
       if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
       await db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
       record(`✏️ Updated “${task.title}”`)
-      return JSON.stringify({ ok: true, id: task.id })
+      return JSON.stringify({ ok: true, id: task.id, recurrence: p.recurrence })
     },
     {
       name: 'update_task',
-      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, status, notes/description, recurrence, project, or homework flag.',
+      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, status, notes/description, recurrence, days_of_week, project, or homework flag.',
       schema: z.object({
         title: z.string().describe('part of the task title to find it'),
         new_title: z.string().optional(),
@@ -258,7 +270,8 @@ export function buildTools(record) {
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         status: z.enum(['todo', 'doing', 'done']).optional(),
         notes: z.string().optional().describe('description / extra detail'),
-        recurrence: z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+        recurrence: recurrenceEnum.optional(),
+        days_of_week: daysOfWeekSchema,
         project: z.string().optional().describe('project name/short_code to attach (empty string to clear)'),
         is_homework: z.boolean().optional(),
       }),
@@ -269,11 +282,19 @@ export function buildTools(record) {
     async ({ title }) => {
       const task = await findTask(title, true)
       if (!task) return JSON.stringify({ ok: false, message: `No open task matching "${title}".` })
-      await db.prepare("UPDATE tasks SET status = 'done', completed_at = @ts, updated_at = @ts WHERE id = @id").run({ id: task.id, ts: now() })
+      const ts = now()
+      if (isRecurring(task.recurrence)) {
+        const nextDue = advanceDue(task.due_date, task.recurrence)
+        await db.prepare(`UPDATE tasks SET status = 'todo', due_date = @due, completed_at = NULL, updated_at = @ts WHERE id = @id`)
+          .run({ id: task.id, due: nextDue, ts })
+        record(`✅ Completed “${task.title}” → next ${nextDue}`)
+        return JSON.stringify({ ok: true, id: task.id, rolled: true, due_date: nextDue })
+      }
+      await db.prepare("UPDATE tasks SET status = 'done', completed_at = @ts, updated_at = @ts WHERE id = @id").run({ id: task.id, ts })
       record(`✅ Completed “${task.title}”`)
       return JSON.stringify({ ok: true, id: task.id })
     },
-    { name: 'complete_task', description: 'Mark an open task done, found by a title fragment.', schema: z.object({ title: z.string() }) },
+    { name: 'complete_task', description: 'Mark an open task done, found by a title fragment. Recurring tasks roll to the next due date.', schema: z.object({ title: z.string() }) },
   )
 
   const deleteTask = tool(

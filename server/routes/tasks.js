@@ -3,6 +3,7 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { touchProject } from '../lib/projects.js'
+import { advanceDue, encodeRecurrenceFields, isRecurring, serializeRecurrence } from '../lib/taskRecurrence.js'
 
 const router = Router()
 const ALLOWED = ['title', 'status', 'emoji', 'due_date', 'priority', 'recurrence', 'project_id', 'notes', 'is_homework']
@@ -33,6 +34,7 @@ router.post('/', async (req, res) => {
   if (!title?.trim()) return res.status(400).json(httpError('Title is required', 'VALIDATION'))
   const ts = now()
   const id = newId()
+  const recurrence = encodeRecurrenceFields(req.body.recurrence, req.body.days_of_week ?? req.body.weekdays)
   await db.prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
     VALUES (@id,@title,@status,@emoji,@due_date,@priority,@recurrence,@project_id,@notes,@is_homework,'local',@ts,@ts)`).run({
     id,
@@ -41,7 +43,7 @@ router.post('/', async (req, res) => {
     emoji: req.body.emoji || '📄',
     due_date: req.body.due_date || null,
     priority: req.body.priority || 'normal',
-    recurrence: req.body.recurrence || 'single',
+    recurrence,
     project_id: req.body.project_id || null,
     notes: req.body.notes || '',
     is_homework: asHomeworkFlag(req.body.is_homework),
@@ -50,26 +52,27 @@ router.post('/', async (req, res) => {
   res.status(201).json(await db.prepare(`${withProject} WHERE t.id = ?`).get(id))
 })
 
-// Advance a due date by the recurrence cadence, preserving date-only vs. timed.
-function advanceDue(due, recurrence) {
-  const base = due ? new Date(due) : new Date()
-  if (recurrence === 'monthly') base.setMonth(base.getMonth() + 1)
-  else if (recurrence === 'weekly') base.setDate(base.getDate() + 7)
-  else base.setDate(base.getDate() + 1)
-  return due && due.length <= 10 ? base.toISOString().slice(0, 10) : base.toISOString()
-}
-
 router.patch('/:id', async (req, res) => {
   const existing = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
   if (!existing) return res.status(404).json(httpError('Task not found', 'NOT_FOUND'))
   const patch = { ...req.body }
   if ('is_homework' in patch) patch.is_homework = asHomeworkFlag(patch.is_homework)
+  if ('days_of_week' in patch || 'weekdays' in patch || (patch.recurrence && typeof patch.recurrence === 'object')) {
+    patch.recurrence = encodeRecurrenceFields(
+      patch.recurrence ?? existing.recurrence,
+      patch.days_of_week ?? patch.weekdays,
+    )
+    delete patch.days_of_week
+    delete patch.weekdays
+  } else if (typeof patch.recurrence === 'string') {
+    patch.recurrence = serializeRecurrence(patch.recurrence)
+  }
   const isCompleting = patch.status === 'done' && existing.status !== 'done'
 
   // Completing anything logs work on its project.
   if (isCompleting && existing.project_id) await touchProject(existing.project_id)
 
-  if (isCompleting && existing.recurrence && existing.recurrence !== 'single') {
+  if (isCompleting && isRecurring(existing.recurrence)) {
     // Recurring: roll the due date forward and keep it active instead of
     // marking it done forever, so it reappears next period.
     patch.status = 'todo'
