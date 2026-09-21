@@ -3,6 +3,7 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { touchProject } from '../lib/projects.js'
+import { DUE_SORT_KEY_T, normalizeDueDate } from '../lib/dueDate.js'
 import { advanceDue, encodeRecurrenceFields, isRecurring, serializeRecurrence } from '../lib/taskRecurrence.js'
 
 const router = Router()
@@ -19,7 +20,7 @@ function asHomeworkFlag(value) {
 
 // GET /api/tasks?status=&project_id=&filter=overdue|today|week|upcoming
 router.get('/', async (req, res) => {
-  const rows = await db.prepare(`${withProject} ORDER BY (t.due_date IS NULL), t.due_date ASC`).all()
+  const rows = await db.prepare(`${withProject} ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T} ASC`).all()
   res.json(rows)
 })
 
@@ -41,7 +42,7 @@ router.post('/', async (req, res) => {
     title: title.trim(),
     status: req.body.status || 'todo',
     emoji: req.body.emoji || '📄',
-    due_date: req.body.due_date || null,
+    due_date: normalizeDueDate(req.body.due_date),
     priority: req.body.priority || 'normal',
     recurrence,
     project_id: req.body.project_id || null,
@@ -57,6 +58,7 @@ router.patch('/:id', async (req, res) => {
   if (!existing) return res.status(404).json(httpError('Task not found', 'NOT_FOUND'))
   const patch = { ...req.body }
   if ('is_homework' in patch) patch.is_homework = asHomeworkFlag(patch.is_homework)
+  if ('due_date' in patch) patch.due_date = normalizeDueDate(patch.due_date)
   if ('days_of_week' in patch || 'weekdays' in patch || (patch.recurrence && typeof patch.recurrence === 'object')) {
     patch.recurrence = encodeRecurrenceFields(
       patch.recurrence ?? existing.recurrence,

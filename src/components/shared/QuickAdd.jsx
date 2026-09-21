@@ -102,8 +102,12 @@ export function QuickAdd({ open, onClose }) {
         {type !== 'note' && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>{type === 'event' ? 'When' : 'Due date'}</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Label>{type === 'event' ? 'When' : 'Due'}</Label>
+              <Input
+                type={type === 'task' ? 'datetime-local' : 'date'}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
             </div>
             <div>
               <Label>Project</Label>

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { db } from '../db/index.js'
 import { localDateStr } from '../lib/helpers.js'
 import { isDoneForPeriod } from '../lib/period.js'
+import { DUE_SORT_KEY_T } from '../lib/dueDate.js'
 
 const router = Router()
 
@@ -23,22 +24,22 @@ router.get('/today', async (req, res) => {
     ORDER BY e.all_day DESC, e.start`).all({ date: todayDate, start: todayStart, end: todayEnd })
 
   const dueToday = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND substr(t.due_date,1,10) = @date ORDER BY t.due_date`).all({ date: todayDate })
+    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND substr(t.due_date,1,10) = @date ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate })
 
   const overdue = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date < @now AND substr(t.due_date,1,10) != @date ORDER BY t.due_date`).all({ now: nowIso, date: todayDate })
+    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} < @now AND substr(t.due_date,1,10) != @date ORDER BY ${DUE_SORT_KEY_T}`).all({ now: nowIso, date: todayDate })
 
   // Due in the next 7 days, excluding today + overdue — so near deadlines are visible.
   const dueThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date > @end AND t.due_date <= @weekEnd
-    ORDER BY t.due_date`).all({ end: todayEnd, weekEnd })
+    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} > @end AND ${DUE_SORT_KEY_T} <= @weekEnd
+    ORDER BY ${DUE_SORT_KEY_T}`).all({ end: todayEnd, weekEnd })
 
   // Homework due tonight (today) and homework due later this week (not including today).
   const homeworkTonight = dueToday.filter((t) => Number(t.is_homework) === 1)
   const homeworkThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
     WHERE t.status != 'done' AND t.is_homework = 1 AND t.due_date IS NOT NULL
-      AND substr(t.due_date,1,10) >= @date AND t.due_date <= @weekEnd
-    ORDER BY t.due_date`).all({ date: todayDate, weekEnd })
+      AND substr(t.due_date,1,10) >= @date AND ${DUE_SORT_KEY_T} <= @weekEnd
+    ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate, weekEnd })
 
   const priorities = await db.prepare('SELECT * FROM priorities WHERE active = 1 ORDER BY sort_order').all()
   const needsReply = (await db.prepare('SELECT COUNT(*) c FROM emails WHERE needs_reply = 1').get()).c
@@ -47,7 +48,7 @@ router.get('/today', async (req, res) => {
   // Pinned: open high/urgent tasks — surfaced in the header so they can't be missed.
   const pinned = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
     WHERE t.status != 'done' AND t.priority IN ('high','urgent')
-    ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, (t.due_date IS NULL), t.due_date`).all()
+    ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, (t.due_date IS NULL), ${DUE_SORT_KEY_T}`).all()
 
   res.json({
     date: todayDate,

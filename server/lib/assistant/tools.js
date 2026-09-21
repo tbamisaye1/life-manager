@@ -5,6 +5,7 @@ import { newId, now, localDateStr } from '../helpers.js'
 import { firstFreeSlot, addMinutes, resolveProjectId, findEvents, removeEventById } from './tools-shared.js'
 import { expandRecurrence } from '../recurrence.js'
 import { advanceDue, encodeRecurrenceFields, isRecurring } from '../taskRecurrence.js'
+import { DUE_SORT_KEY, normalizeDueDate } from '../dueDate.js'
 import * as googleI from '../../integrations/google.js'
 import { buildGymTools } from './tools-gym.js'
 import { buildNotesTools } from './tools-notes.js'
@@ -181,7 +182,7 @@ export function buildTools(record) {
         .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
           VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,'assistant',@ts,@ts)`)
         .run({
-          id, title, emoji: emoji || (hw ? '📚' : '📌'), due: due_date || null,
+          id, title, emoji: emoji || (hw ? '📚' : '📌'), due: normalizeDueDate(due_date),
           priority: priority || 'normal', recurrence: recurrenceValue,
           pid: projectId, notes: notes || '', hw, ts,
         })
@@ -193,7 +194,7 @@ export function buildTools(record) {
       description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence (+ optional days_of_week) if it repeats, and is_homework=true for school assignments.',
       schema: z.object({
         title: z.string(),
-        due_date: z.string().optional().describe('local datetime; optional'),
+        due_date: z.string().optional().describe('local datetime; date-only defaults to 11:00 PM'),
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         project: z.string().optional().describe('project name to attach to, if mentioned'),
         notes: z.string().optional().describe('description / extra detail'),
@@ -245,7 +246,7 @@ export function buildTools(record) {
       const sets = []
       const p = { id: task.id, ts: now() }
       if (new_title) { sets.push('title = @title'); p.title = new_title }
-      if (due_date !== undefined) { sets.push('due_date = @due'); p.due = due_date || null }
+      if (due_date !== undefined) { sets.push('due_date = @due'); p.due = normalizeDueDate(due_date) }
       if (priority) { sets.push('priority = @priority'); p.priority = priority }
       if (status) { sets.push('status = @status'); p.status = status; if (status === 'done') sets.push('completed_at = @ts') }
       if (notes !== undefined) { sets.push('notes = @notes'); p.notes = notes }
@@ -311,7 +312,7 @@ export function buildTools(record) {
   const listTasks = tool(
     async ({ filter }) => {
       const where = filter === 'open' ? "WHERE status != 'done'" : filter === 'done' ? "WHERE status = 'done'" : ''
-      const rows = await db.prepare(`SELECT id, title, status, due_date, priority FROM tasks ${where} ORDER BY (due_date IS NULL), due_date LIMIT 50`).all()
+      const rows = await db.prepare(`SELECT id, title, status, due_date, priority FROM tasks ${where} ORDER BY (due_date IS NULL), ${DUE_SORT_KEY} LIMIT 50`).all()
       return JSON.stringify({ tasks: rows })
     },
     { name: 'list_tasks', description: 'List tasks (filter: open | done | all) to see what exists.', schema: z.object({ filter: z.enum(['open', 'done', 'all']).optional() }) },

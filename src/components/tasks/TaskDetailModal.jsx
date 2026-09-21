@@ -4,6 +4,7 @@ import { Modal, Button, Input, Select, Label } from '../ui'
 import { NestedPagesPanel } from '../pages/NestedPagesPanel'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
 import { cn } from '../../lib/cn'
+import { toDueInputValue } from '../../lib/format'
 import {
   DOW_LABEL,
   RECURRENCE_FREQUENCIES,
@@ -13,12 +14,6 @@ import {
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent']
 const WD = DOW_LABEL.map((l, v) => ({ v, l: l[0] }))
-
-// Convert an ISO value to the value a datetime-local / date input expects.
-const toInputValue = (iso) => {
-  if (!iso) return ''
-  return iso.length > 10 ? iso.slice(0, 16) : iso
-}
 
 function initDraft(task) {
   const { frequency, weekdays } = parseRecurrence(task?.recurrence)
@@ -132,11 +127,11 @@ export function TaskDetailModal({ task, open, onClose }) {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Due date</Label>
+            <Label>Due</Label>
             <Input
-              type={hasTime(draft.due_date) ? 'datetime-local' : 'date'}
-              value={toInputValue(draft.due_date)}
-              onChange={(e) => set({ due_date: e.target.value })}
+              type="datetime-local"
+              value={toDueInputValue(draft.due_date)}
+              onChange={(e) => set({ due_date: e.target.value || null })}
             />
           </div>
           <div>
@@ -223,5 +218,3 @@ export function TaskDetailModal({ task, open, onClose }) {
     </Modal>
   )
 }
-
-const hasTime = (iso) => typeof iso === 'string' && iso.includes('T')

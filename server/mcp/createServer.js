@@ -14,6 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { db } from '../db/index.js'
 import { newId, now, localDateStr } from '../lib/helpers.js'
+import { DUE_SORT_KEY_T, normalizeDueDate } from '../lib/dueDate.js'
 import { advanceDue, encodeRecurrenceFields, isRecurring } from '../lib/taskRecurrence.js'
 
 const recurrenceEnum = z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly'])
@@ -120,7 +121,7 @@ export function createLifeManagerMcpServer() {
         .prepare(
           `SELECT ${TASK_COLS}, p.short_code AS project_code
            FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-           WHERE t.status != 'done' ORDER BY (t.due_date IS NULL), t.due_date`,
+           WHERE t.status != 'done' ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}`,
         )
         .all()
       const events = await db
@@ -184,7 +185,7 @@ export function createLifeManagerMcpServer() {
         .prepare(
           `SELECT ${TASK_COLS}, p.short_code AS project_code
            FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-           ORDER BY (t.due_date IS NULL), t.due_date`,
+           ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}`,
         )
         .all()
       const tasks = rows.filter((t) => matchesBucket(t, filter)).slice(0, limit)
@@ -199,7 +200,7 @@ export function createLifeManagerMcpServer() {
         'Create a task. Set is_homework=true for school assignments so they show in Homework Tonight / This week. For repeating tasks use recurrence plus optional days_of_week (e.g. weekly + [1,5,6,0] for Mon/Fri/Sat/Sun).',
       inputSchema: {
         title: z.string(),
-        due_date: z.string().optional().describe('YYYY-MM-DD or local datetime'),
+        due_date: z.string().optional().describe('YYYY-MM-DD or local datetime YYYY-MM-DDTHH:mm (date-only defaults to 11:00 PM)'),
         priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
         project: z.string().optional().describe('project name or short_code'),
         notes: z.string().optional(),
@@ -223,7 +224,7 @@ export function createLifeManagerMcpServer() {
           id,
           title: title.trim(),
           emoji: emoji || (is_homework ? '📚' : '📌'),
-          due: due_date || null,
+          due: normalizeDueDate(due_date),
           priority: priority || 'normal',
           recurrence: recurrenceValue,
           pid: projectId,
@@ -235,7 +236,7 @@ export function createLifeManagerMcpServer() {
         ok: true,
         id,
         title: title.trim(),
-        due_date: due_date || null,
+        due_date: normalizeDueDate(due_date),
         recurrence: recurrenceValue,
         is_homework: !!homeworkFlag(is_homework),
       })
@@ -275,7 +276,7 @@ export function createLifeManagerMcpServer() {
       }
       if (args.due_date !== undefined) {
         sets.push('due_date = @due')
-        p.due = args.due_date || null
+        p.due = normalizeDueDate(args.due_date)
       }
       if (args.priority) {
         sets.push('priority = @priority')

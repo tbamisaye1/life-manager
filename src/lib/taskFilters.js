@@ -1,4 +1,5 @@
 import { differenceInCalendarDays, parseISO } from 'date-fns'
+import { dueSortKey } from './format'
 
 // Pure helpers for bucketing tasks by deadline (+ homework). Kept separate from
 // UI so Today, Tasks, Projects, and mobile can share the same rules.
@@ -87,7 +88,13 @@ export function matchesFilter(task, filter) {
 }
 
 export function filterTasks(tasks, filter) {
-  return tasks.filter((t) => matchesFilter(t, filter))
+  return tasks
+    .filter((t) => matchesFilter(t, filter))
+    .slice()
+    .sort((a, b) => {
+      if (filter === 'done') return 0
+      return dueSortKey(a.due_date).localeCompare(dueSortKey(b.due_date))
+    })
 }
 
 export function countForFilter(tasks, filter) {

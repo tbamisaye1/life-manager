@@ -3,6 +3,7 @@ import { db } from '../db/index.js'
 import { newId, now, buildUpdate } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
 import { touchProject } from '../lib/projects.js'
+import { DUE_SORT_KEY } from '../lib/dueDate.js'
 
 const router = Router()
 const ALLOWED = ['name', 'short_code', 'color', 'emoji', 'description', 'archived']
@@ -22,7 +23,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)
   if (!project) return res.status(404).json(httpError('Project not found', 'NOT_FOUND'))
-  const tasks = await db.prepare("SELECT * FROM tasks WHERE project_id = ? ORDER BY (due_date IS NULL), due_date").all(req.params.id)
+  const tasks = await db.prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY (due_date IS NULL), ${DUE_SORT_KEY}`).all(req.params.id)
   const events = await db.prepare("SELECT * FROM events WHERE project_id = ? ORDER BY start DESC LIMIT 20").all(req.params.id)
   res.json({ ...project, tasks, events })
 })
