@@ -45,19 +45,30 @@ export function dueLabel(value, hasTime = hasTimeComponent(value)) {
 /**
  * Deadline status for badges.
  * Returns { tone, label } where tone ∈ overdue | urgent | soon | upcoming | none | done.
+ * Timed dues use the clock: a 9:25 AM task is overdue this evening, not still "Due today".
  */
 export function deadlineStatus(value, { done = false } = {}) {
   if (done) return { tone: 'done', label: 'Done' }
   if (!value) return { tone: 'none', label: 'No deadline' }
   const d = toDate(value)
-  const days = differenceInCalendarDays(d, new Date())
+  const now = new Date()
   const timed = hasTimeComponent(value)
   const timeBit = timed ? `, ${format(d, 'h:mm a')}` : ''
-  if (days < 0) {
-    const abs = formatDistanceStrict(d, new Date(), { unit: 'day' })
+  const pastByClock = timed && d.getTime() < now.getTime()
+  const days = differenceInCalendarDays(d, now)
+
+  if (pastByClock || days < 0) {
+    if (timed && days === 0) {
+      return { tone: 'overdue', label: `Overdue${timeBit}` }
+    }
+    const abs = formatDistanceStrict(d, now, { unit: 'day' })
     return { tone: 'overdue', label: `Overdue by ${abs}${timeBit}` }
   }
-  if (days === 0) return { tone: 'urgent', label: `Due today${timeBit}` }
+  if (days === 0) {
+    // Same calendar day with a morning time still ahead: lead with the clock.
+    if (timed) return { tone: 'urgent', label: `Due ${format(d, 'h:mm a')}` }
+    return { tone: 'urgent', label: 'Due today' }
+  }
   if (days === 1) return { tone: 'soon', label: `Due tomorrow${timeBit}` }
   if (days <= 6) return { tone: 'soon', label: `Due in ${days} days${timeBit}` }
   return { tone: 'upcoming', label: `Due in ${days} days${timeBit}` }

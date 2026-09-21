@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Modal, Button, Input, Select, Label } from '../ui'
 import { NestedPagesPanel } from '../pages/NestedPagesPanel'
+import { DueField } from './DueField'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
 import { cn } from '../../lib/cn'
-import { toDueInputValue } from '../../lib/format'
 import {
   DOW_LABEL,
   RECURRENCE_FREQUENCIES,
@@ -126,14 +126,11 @@ export function TaskDetailModal({ task, open, onClose }) {
         </label>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Due</Label>
-            <Input
-              type="datetime-local"
-              value={toDueInputValue(draft.due_date)}
-              onChange={(e) => set({ due_date: e.target.value || null })}
-            />
-          </div>
+          <DueField
+            value={draft.due_date}
+            onChange={(due_date) => set({ due_date })}
+            className="col-span-2 sm:col-span-1"
+          />
           <div>
             <Label>Project</Label>
             <Select value={draft.project_id || ''} onChange={(e) => set({ project_id: e.target.value })}>

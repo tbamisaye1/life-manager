@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckSquare, Calendar, StickyNote } from 'lucide-react'
 import { Modal, Button, Input, Select, Label } from '../ui'
+import { DueField } from '../tasks/DueField'
 import { cn } from '../../lib/cn'
 import { tasks, events, notes, projects as projectsResource } from '../../hooks/resources'
 
@@ -101,14 +102,18 @@ export function QuickAdd({ open, onClose }) {
 
         {type !== 'note' && (
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>{type === 'event' ? 'When' : 'Due'}</Label>
-              <Input
-                type={type === 'task' ? 'datetime-local' : 'date'}
+            {type === 'task' ? (
+              <DueField
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={setDate}
+                className="col-span-2 sm:col-span-1"
               />
-            </div>
+            ) : (
+              <div>
+                <Label>When</Label>
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+            )}
             <div>
               <Label>Project</Label>
               <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
