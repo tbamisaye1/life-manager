@@ -84,13 +84,22 @@ const SCOPE_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'tasks', label: 'Tasks' },
   { key: 'homework', label: 'Homework' },
+  { key: 'exam', label: 'Exams' },
 ]
 
-/** Segmented filter tabs + custom N-day range for all / tasks / homework. */
-export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
+/** Segmented filter tabs + custom N-day range for all / tasks / homework / exams. */
+export function TaskFilters({
+  value,
+  onChange,
+  counts = {},
+  tasks = [],
+  groups = TASK_FILTER_GROUPS,
+  defaultScope = 'all',
+  scopes = SCOPE_OPTIONS,
+}) {
   const custom = parseNextFilter(value)
   const days = custom?.days ?? 3
-  const scope = custom?.scope ?? 'all'
+  const scope = custom?.scope ?? defaultScope
   const customActive = custom != null
   const customKey = nextFilterKey(days, scope)
   const customCount = countForFilter(tasks, customKey)
@@ -102,7 +111,7 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-        {TASK_FILTER_GROUPS.map((group, i) => (
+        {groups.map((group, i) => (
           <div key={group.id} className="flex flex-wrap items-center gap-1.5">
             {i > 0 && <span className="mx-0.5 hidden h-4 w-px bg-zinc-200 sm:inline-block" aria-hidden />}
             {group.filters.map((f) => (
@@ -162,7 +171,7 @@ export function TaskFilters({ value, onChange, counts = {}, tasks = [] }) {
 
         <div className="ml-auto flex items-center gap-2">
           <div className="inline-flex rounded-lg bg-white p-0.5 shadow-sm ring-1 ring-zinc-200/80">
-            {SCOPE_OPTIONS.map((opt) => (
+            {scopes.map((opt) => (
               <button
                 key={opt.key}
                 type="button"

@@ -172,26 +172,27 @@ export function buildTools(record) {
   )
 
   const createTask = tool(
-    async ({ title, due_date, priority, project, notes, recurrence, days_of_week, emoji, is_homework }) => {
+    async ({ title, due_date, priority, project, notes, recurrence, days_of_week, emoji, is_homework, is_exam }) => {
       const ts = now()
       const id = newId()
       const projectId = await resolveProjectId(project)
       const hw = is_homework ? 1 : 0
+      const exam = is_exam ? 1 : 0
       const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
       await db
-        .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
-          VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,'assistant',@ts,@ts)`)
+        .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,source,created_at,updated_at)
+          VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,'assistant',@ts,@ts)`)
         .run({
-          id, title, emoji: emoji || (hw ? '📚' : '📌'), due: normalizeDueDate(due_date),
+          id, title, emoji: emoji || (exam ? '📝' : hw ? '📚' : '📌'), due: normalizeDueDate(due_date),
           priority: priority || 'normal', recurrence: recurrenceValue,
-          pid: projectId, notes: notes || '', hw, ts,
+          pid: projectId, notes: notes || '', hw, exam, ts,
         })
-      record(`✅ Added task “${title}”${priority && priority !== 'normal' ? ` (${priority})` : ''}${hw ? ' · homework' : ''}`)
-      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', recurrence: recurrenceValue, is_homework: !!hw })
+      record(`✅ Added task “${title}”${priority && priority !== 'normal' ? ` (${priority})` : ''}${exam ? ' · exam' : hw ? ' · homework' : ''}`)
+      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', recurrence: recurrenceValue, is_homework: !!hw, is_exam: !!exam })
     },
     {
       name: 'create_task',
-      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence (+ optional days_of_week) if it repeats, and is_homework=true for school assignments.',
+      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence (+ optional days_of_week) if it repeats, is_homework=true for school assignments, and is_exam=true for midterms/finals.',
       schema: z.object({
         title: z.string(),
         due_date: z.string().optional().describe('local datetime; date-only defaults to 11:00 PM'),
@@ -202,6 +203,7 @@ export function buildTools(record) {
         days_of_week: daysOfWeekSchema,
         emoji: z.string().optional(),
         is_homework: z.boolean().optional().describe('true for school homework'),
+        is_exam: z.boolean().optional().describe('true for exams / midterms / finals'),
       }),
     },
   )
@@ -240,7 +242,7 @@ export function buildTools(record) {
   }
 
   const updateTask = tool(
-    async ({ title, new_title, due_date, priority, status, notes, recurrence, days_of_week, project, is_homework }) => {
+    async ({ title, new_title, due_date, priority, status, notes, recurrence, days_of_week, project, is_homework, is_exam }) => {
       const task = await findTask(title, false)
       if (!task) return JSON.stringify({ ok: false, message: `No task matching "${title}".` })
       const sets = []
@@ -256,6 +258,7 @@ export function buildTools(record) {
       }
       if (project !== undefined) { sets.push('project_id = @pid'); p.pid = await resolveProjectId(project) }
       if (is_homework !== undefined) { sets.push('is_homework = @hw'); p.hw = is_homework ? 1 : 0 }
+      if (is_exam !== undefined) { sets.push('is_exam = @exam'); p.exam = is_exam ? 1 : 0 }
       if (!sets.length) return JSON.stringify({ ok: false, message: 'Nothing to update.' })
       await db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(p)
       record(`✏️ Updated “${task.title}”`)
@@ -263,7 +266,7 @@ export function buildTools(record) {
     },
     {
       name: 'update_task',
-      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, status, notes/description, recurrence, days_of_week, project, or homework flag.',
+      description: 'Edit an existing task (found by a title fragment): rename, change due date, priority, status, notes/description, recurrence, days_of_week, project, homework, or exam flag.',
       schema: z.object({
         title: z.string().describe('part of the task title to find it'),
         new_title: z.string().optional(),
@@ -275,6 +278,7 @@ export function buildTools(record) {
         days_of_week: daysOfWeekSchema,
         project: z.string().optional().describe('project name/short_code to attach (empty string to clear)'),
         is_homework: z.boolean().optional(),
+        is_exam: z.boolean().optional(),
       }),
     },
   )

@@ -102,7 +102,7 @@ Important details:
 
 | File | Job |
 |------|-----|
-| `server/mcp/createServer.js` | Build `McpServer`, `registerTool(...)` for tasks / today / schedule / search |
+| `server/mcp/createServer.js` | Build `McpServer`, `registerTool(...)` for tasks / today / schedule / search / exams (`is_exam`, `exam_*` filters) |
 | `server/routes/mcp.js` | Express `POST /api/mcp` → Streamable HTTP transport |
 | `server/app.js` | Mounts `/api/mcp` behind the same PIN gate as the REST API |
 | `server/lib/pinAuth.js` | Cookie unlock, `X-Life-Manager-Pin`, `Authorization: Bearer` |

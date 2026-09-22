@@ -41,6 +41,16 @@ router.get('/today', async (req, res) => {
       AND substr(t.due_date,1,10) >= @date AND ${DUE_SORT_KEY_T} <= @weekEnd
     ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate, weekEnd })
 
+  const examsTonight = dueToday.filter((t) => Number(t.is_exam) === 1)
+  const examsThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+    WHERE t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
+      AND substr(t.due_date,1,10) >= @date AND ${DUE_SORT_KEY_T} <= @weekEnd
+    ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate, weekEnd })
+  const examsUpcoming = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+    WHERE t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
+      AND ${DUE_SORT_KEY_T} >= @now
+    ORDER BY ${DUE_SORT_KEY_T}`).all({ now: nowIso })
+
   const priorities = await db.prepare('SELECT * FROM priorities WHERE active = 1 ORDER BY sort_order').all()
   const needsReply = (await db.prepare('SELECT COUNT(*) c FROM emails WHERE needs_reply = 1').get()).c
   const replyQueue = (await db.prepare('SELECT COUNT(*) c FROM reply_queue WHERE done = 0').get()).c
@@ -58,6 +68,9 @@ router.get('/today', async (req, res) => {
     dueThisWeek,
     homeworkTonight,
     homeworkThisWeek,
+    examsTonight,
+    examsThisWeek,
+    examsUpcoming,
     pinned,
     priorities: priorities.map((p) => ({ ...p, done_for_period: isDoneForPeriod(p) })),
     counts: {
@@ -68,6 +81,9 @@ router.get('/today', async (req, res) => {
       dueThisWeek: dueThisWeek.length,
       homeworkTonight: homeworkTonight.length,
       homeworkThisWeek: homeworkThisWeek.length,
+      examsTonight: examsTonight.length,
+      examsThisWeek: examsThisWeek.length,
+      examsUpcoming: examsUpcoming.length,
       pinned: pinned.length,
     },
   })

@@ -25,8 +25,8 @@ const daysOfWeekSchema = z
   .describe('0=Sun..6=Sat (or sun/mon/…). Use with weekly/daily for e.g. Mon/Fri/Sat/Sun = [1,5,6,0]')
 
 // Qualify with t. — JOINs make bare `id` ambiguous.
-const TASK_COLS = `t.id, t.title, t.status, t.emoji, t.due_date, t.priority, t.recurrence, t.project_id, t.notes, t.is_homework, t.completed_at`
-const TASK_COLS_PLAIN = `id, title, status, emoji, due_date, priority, recurrence, project_id, notes, is_homework, completed_at`
+const TASK_COLS = `t.id, t.title, t.status, t.emoji, t.due_date, t.priority, t.recurrence, t.project_id, t.notes, t.is_homework, t.is_exam, t.completed_at`
+const TASK_COLS_PLAIN = `id, title, status, emoji, due_date, priority, recurrence, project_id, notes, is_homework, is_exam, completed_at`
 
 function jsonResult(data) {
   return {
@@ -35,6 +35,10 @@ function jsonResult(data) {
 }
 
 function homeworkFlag(v) {
+  return v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0
+}
+
+function examFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0
 }
 
@@ -76,6 +80,7 @@ function daysUntil(due) {
 function matchesBucket(task, filter) {
   const d = daysUntil(task.due_date)
   const hw = Number(task.is_homework) === 1
+  const exam = Number(task.is_exam) === 1
   switch (filter) {
     case 'open':
       return task.status !== 'done'
@@ -96,6 +101,17 @@ function matchesBucket(task, filter) {
       return task.status !== 'done' && hw && d === 0
     case 'homework_week':
       return task.status !== 'done' && hw && d != null && d >= 0 && d <= 7
+    case 'exam':
+    case 'exams':
+      return task.status !== 'done' && exam
+    case 'exam_tonight':
+      return task.status !== 'done' && exam && d === 0
+    case 'exam_week':
+      return task.status !== 'done' && exam && d != null && d >= 0 && d <= 7
+    case 'exam_upcoming':
+      return task.status !== 'done' && exam && d != null && d >= 0
+    case 'exam_overdue':
+      return task.status !== 'done' && exam && d != null && d < 0
     default:
       return task.status !== 'done'
   }
@@ -112,7 +128,7 @@ export function createLifeManagerMcpServer() {
     'get_today',
     {
       description:
-        'Snapshot of today: overdue tasks, due tonight, homework tonight, homework this week, due this week, and today\'s events. Prefer this for "what do I have tonight / this week?".',
+        'Snapshot of today: overdue tasks, due tonight, homework tonight/week, exams tonight/week/upcoming, due this week, and today\'s events. Prefer this for "what do I have tonight / this week / what exams are coming?".',
       inputSchema: {},
     },
     async () => {
@@ -135,6 +151,9 @@ export function createLifeManagerMcpServer() {
       const week = rows.filter((t) => matchesBucket(t, 'week'))
       const homeworkTonight = rows.filter((t) => matchesBucket(t, 'homework_tonight'))
       const homeworkWeek = rows.filter((t) => matchesBucket(t, 'homework_week'))
+      const examsTonight = rows.filter((t) => matchesBucket(t, 'exam_tonight'))
+      const examsWeek = rows.filter((t) => matchesBucket(t, 'exam_week'))
+      const examsUpcoming = rows.filter((t) => matchesBucket(t, 'exam_upcoming'))
 
       return jsonResult({
         date: today,
@@ -143,6 +162,9 @@ export function createLifeManagerMcpServer() {
         due_this_week: week,
         homework_tonight: homeworkTonight,
         homework_this_week: homeworkWeek,
+        exams_tonight: examsTonight,
+        exams_this_week: examsWeek,
+        exams_upcoming: examsUpcoming,
         events,
         counts: {
           overdue: overdue.length,
@@ -150,6 +172,9 @@ export function createLifeManagerMcpServer() {
           due_this_week: week.length,
           homework_tonight: homeworkTonight.length,
           homework_this_week: homeworkWeek.length,
+          exams_tonight: examsTonight.length,
+          exams_this_week: examsWeek.length,
+          exams_upcoming: examsUpcoming.length,
           events: events.length,
         },
       })
@@ -160,7 +185,7 @@ export function createLifeManagerMcpServer() {
     'list_tasks',
     {
       description:
-        'List tasks with a filter. Filters: open, done, all, overdue, tonight, week, homework, homework_tonight, homework_week.',
+        'List tasks with a filter. Filters: open, done, all, overdue, tonight, week, homework, homework_tonight, homework_week, exam, exam_tonight, exam_week, exam_upcoming, exam_overdue.',
       inputSchema: {
         filter: z
           .enum([
@@ -174,6 +199,12 @@ export function createLifeManagerMcpServer() {
             'homework',
             'homework_tonight',
             'homework_week',
+            'exam',
+            'exams',
+            'exam_tonight',
+            'exam_week',
+            'exam_upcoming',
+            'exam_overdue',
           ])
           .optional()
           .describe('defaults to open'),
@@ -197,7 +228,7 @@ export function createLifeManagerMcpServer() {
     'create_task',
     {
       description:
-        'Create a task. Set is_homework=true for school assignments so they show in Homework Tonight / This week. For repeating tasks use recurrence plus optional days_of_week (e.g. weekly + [1,5,6,0] for Mon/Fri/Sat/Sun).',
+        'Create a task. Set is_homework=true for school assignments (HW Tonight / This week). Set is_exam=true for midterms/finals (Exams tab). For repeating tasks use recurrence plus optional days_of_week (e.g. weekly + [1,5,6,0] for Mon/Fri/Sat/Sun).',
       inputSchema: {
         title: z.string(),
         due_date: z.string().optional().describe('YYYY-MM-DD or local datetime YYYY-MM-DDTHH:mm (date-only defaults to 11:00 PM)'),
@@ -205,31 +236,35 @@ export function createLifeManagerMcpServer() {
         project: z.string().optional().describe('project name or short_code'),
         notes: z.string().optional(),
         is_homework: z.boolean().optional(),
+        is_exam: z.boolean().optional(),
         recurrence: recurrenceEnum.optional(),
         days_of_week: daysOfWeekSchema,
         emoji: z.string().optional(),
       },
     },
-    async ({ title, due_date, priority, project, notes, is_homework, recurrence, days_of_week, emoji }) => {
+    async ({ title, due_date, priority, project, notes, is_homework, is_exam, recurrence, days_of_week, emoji }) => {
       const ts = now()
       const id = newId()
       const projectId = await resolveProjectId(project)
       const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
+      const exam = examFlag(is_exam)
+      const hw = homeworkFlag(is_homework)
       await db
         .prepare(
-          `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
-           VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,'mcp',@ts,@ts)`,
+          `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,source,created_at,updated_at)
+           VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,'mcp',@ts,@ts)`,
         )
         .run({
           id,
           title: title.trim(),
-          emoji: emoji || (is_homework ? '📚' : '📌'),
+          emoji: emoji || (exam ? '📝' : hw ? '📚' : '📌'),
           due: normalizeDueDate(due_date),
           priority: priority || 'normal',
           recurrence: recurrenceValue,
           pid: projectId,
           notes: notes || '',
-          hw: homeworkFlag(is_homework),
+          hw,
+          exam,
           ts,
         })
       return jsonResult({
@@ -238,7 +273,8 @@ export function createLifeManagerMcpServer() {
         title: title.trim(),
         due_date: normalizeDueDate(due_date),
         recurrence: recurrenceValue,
-        is_homework: !!homeworkFlag(is_homework),
+        is_homework: !!hw,
+        is_exam: !!exam,
       })
     },
   )
@@ -247,7 +283,7 @@ export function createLifeManagerMcpServer() {
     'update_task',
     {
       description:
-        'Update a task found by title fragment (or by id). Can rename, change due date, priority, notes, homework flag, status, project, recurrence, or days_of_week.',
+        'Update a task found by title fragment (or by id). Can rename, change due date, priority, notes, homework/exam flags, status, project, recurrence, or days_of_week.',
       inputSchema: {
         title: z.string().optional().describe('title fragment to find the task'),
         id: z.string().optional().describe('task id if known'),
@@ -257,6 +293,7 @@ export function createLifeManagerMcpServer() {
         status: z.enum(['todo', 'doing', 'done']).optional(),
         notes: z.string().optional(),
         is_homework: z.boolean().optional(),
+        is_exam: z.boolean().optional(),
         project: z.string().optional().describe('project name/short_code; empty string clears'),
         recurrence: recurrenceEnum.optional(),
         days_of_week: daysOfWeekSchema,
@@ -295,6 +332,10 @@ export function createLifeManagerMcpServer() {
       if (args.is_homework !== undefined) {
         sets.push('is_homework = @hw')
         p.hw = homeworkFlag(args.is_homework)
+      }
+      if (args.is_exam !== undefined) {
+        sets.push('is_exam = @exam')
+        p.exam = examFlag(args.is_exam)
       }
       if (args.project !== undefined) {
         sets.push('project_id = @pid')

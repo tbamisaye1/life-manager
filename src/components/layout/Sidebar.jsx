@@ -29,6 +29,7 @@ function useNavBadges() {
   const c = data?.counts || {}
   return {
     '/tasks': c.overdue,
+    '/exams': c.examsUpcoming ?? c.examsThisWeek,
     '/email': c.needsReply,
     '/replies': c.replyQueue,
   }

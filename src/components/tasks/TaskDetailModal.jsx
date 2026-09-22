@@ -80,12 +80,14 @@ export function TaskDetailModal({ task, open, onClose }) {
       project_id: draft.project_id || null,
       notes: draft.notes || '',
       is_homework: draft.is_homework ? 1 : 0,
+      is_exam: draft.is_exam ? 1 : 0,
     })
     onClose()
   }
 
   const del = async () => { await remove.mutateAsync(task.id); onClose() }
   const homework = !!(Number(draft.is_homework) === 1 || draft.is_homework === true)
+  const exam = !!(Number(draft.is_exam) === 1 || draft.is_exam === true)
 
   return (
     <Modal
@@ -112,18 +114,32 @@ export function TaskDetailModal({ task, open, onClose }) {
           <Input value={draft.title || ''} onChange={(e) => set({ title: e.target.value })} />
         </div>
 
-        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-          <input
-            type="checkbox"
-            checked={homework}
-            onChange={(e) => set({ is_homework: e.target.checked ? 1 : 0 })}
-            className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <div className="leading-tight">
-            <p className="text-sm font-medium text-zinc-800">Homework</p>
-            <p className="text-xs text-zinc-500">Shows up under HW Tonight / HW This Week</p>
-          </div>
-        </label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={homework}
+              onChange={(e) => set({ is_homework: e.target.checked ? 1 : 0 })}
+              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div className="leading-tight">
+              <p className="text-sm font-medium text-zinc-800">Homework</p>
+              <p className="text-xs text-zinc-500">HW Tonight / This Week</p>
+            </div>
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={exam}
+              onChange={(e) => set({ is_exam: e.target.checked ? 1 : 0 })}
+              className="h-4 w-4 rounded border-zinc-300 text-rose-600 focus:ring-rose-500"
+            />
+            <div className="leading-tight">
+              <p className="text-sm font-medium text-zinc-800">Exam</p>
+              <p className="text-xs text-zinc-500">Shows on the Exams tab</p>
+            </div>
+          </label>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <DueField

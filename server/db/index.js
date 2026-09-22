@@ -114,6 +114,7 @@ export async function initDb() {
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship_override INTEGER NOT NULL DEFAULT 0')
   // School homework flag (Tonight / This week homework views).
   await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_homework INTEGER NOT NULL DEFAULT 0')
+  await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_exam INTEGER NOT NULL DEFAULT 0')
   // Bracket-titled events (e.g. "[All Hands]") belong on the month overview.
   await client.exec("UPDATE events SET flagship = 1 WHERE flagship = 0 AND title LIKE '[%'")
   return client.label

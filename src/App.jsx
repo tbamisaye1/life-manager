@@ -5,6 +5,7 @@ import CalendarPage from './pages/CalendarPage'
 import DailySchedulePage from './pages/DailySchedulePage'
 import AssistantPage from './pages/AssistantPage'
 import TasksPage from './pages/TasksPage'
+import ExamsPage from './pages/ExamsPage'
 import PrioritiesPage from './pages/PrioritiesPage'
 import BoredPage from './pages/BoredPage'
 import ImprovementsPage from './pages/ImprovementsPage'
@@ -31,6 +32,7 @@ function App() {
         <Route path="/schedule" element={<DailySchedulePage />} />
         <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/exams" element={<ExamsPage />} />
         <Route path="/priorities" element={<PrioritiesPage />} />
         <Route path="/bored" element={<BoredPage />} />
         <Route path="/improvements" element={<ImprovementsPage />} />

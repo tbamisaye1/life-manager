@@ -19,13 +19,14 @@ export function QuickAdd({ open, onClose }) {
   const [date, setDate] = useState('')
   const [projectId, setProjectId] = useState('')
   const [isHomework, setIsHomework] = useState(false)
+  const [isExam, setIsExam] = useState(false)
 
   const { data: projectList = [] } = projectsResource.useList()
   const createTask = tasks.useCreate()
   const createEvent = events.useCreate()
   const createNote = notes.useCreate()
 
-  const reset = () => { setTitle(''); setDate(''); setProjectId(''); setType('task'); setIsHomework(false) }
+  const reset = () => { setTitle(''); setDate(''); setProjectId(''); setType('task'); setIsHomework(false); setIsExam(false) }
   const close = () => { reset(); onClose() }
 
   const submit = async (e) => {
@@ -37,7 +38,8 @@ export function QuickAdd({ open, onClose }) {
         due_date: date || null,
         project_id: projectId || null,
         is_homework: isHomework ? 1 : 0,
-        emoji: isHomework ? '📚' : undefined,
+        is_exam: isExam ? 1 : 0,
+        emoji: isExam ? '📝' : isHomework ? '📚' : undefined,
       })
     } else if (type === 'event') {
       await createEvent.mutateAsync({ title, start: date || new Date().toISOString().slice(0, 10), all_day: !date.includes('T'), project_id: projectId || null })
@@ -86,18 +88,32 @@ export function QuickAdd({ open, onClose }) {
         </div>
 
         {type === 'task' && (
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-            <input
-              type="checkbox"
-              checked={isHomework}
-              onChange={(e) => setIsHomework(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div className="leading-tight">
-              <p className="text-sm font-medium text-zinc-800">Homework</p>
-              <p className="text-xs text-zinc-500">Pin to HW Tonight / This Week</p>
-            </div>
-          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={isHomework}
+                onChange={(e) => setIsHomework(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="leading-tight">
+                <p className="text-sm font-medium text-zinc-800">Homework</p>
+                <p className="text-xs text-zinc-500">Pin to HW Tonight / This Week</p>
+              </div>
+            </label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={isExam}
+                onChange={(e) => setIsExam(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-rose-600 focus:ring-rose-500"
+              />
+              <div className="leading-tight">
+                <p className="text-sm font-medium text-zinc-800">Exam</p>
+                <p className="text-xs text-zinc-500">Pin to the Exams tab</p>
+              </div>
+            </label>
+          </div>
         )}
 
         {type !== 'note' && (

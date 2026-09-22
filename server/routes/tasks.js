@@ -7,13 +7,24 @@ import { DUE_SORT_KEY_T, normalizeDueDate } from '../lib/dueDate.js'
 import { advanceDue, encodeRecurrenceFields, isRecurring, serializeRecurrence } from '../lib/taskRecurrence.js'
 
 const router = Router()
-const ALLOWED = ['title', 'status', 'emoji', 'due_date', 'priority', 'recurrence', 'project_id', 'notes', 'is_homework']
+const ALLOWED = [
+  'title',
+  'status',
+  'emoji',
+  'due_date',
+  'priority',
+  'recurrence',
+  'project_id',
+  'notes',
+  'is_homework',
+  'is_exam',
+]
 
 const withProject = `
   SELECT t.*, p.short_code AS project_code, p.color AS project_color, p.emoji AS project_emoji
   FROM tasks t LEFT JOIN projects p ON p.id = t.project_id`
 
-function asHomeworkFlag(value) {
+function asFlag(value) {
   if (value === true || value === 1 || value === '1' || value === 'true') return 1
   return 0
 }
@@ -36,20 +47,27 @@ router.post('/', async (req, res) => {
   const ts = now()
   const id = newId()
   const recurrence = encodeRecurrenceFields(req.body.recurrence, req.body.days_of_week ?? req.body.weekdays)
-  await db.prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,source,created_at,updated_at)
-    VALUES (@id,@title,@status,@emoji,@due_date,@priority,@recurrence,@project_id,@notes,@is_homework,'local',@ts,@ts)`).run({
-    id,
-    title: title.trim(),
-    status: req.body.status || 'todo',
-    emoji: req.body.emoji || '📄',
-    due_date: normalizeDueDate(req.body.due_date),
-    priority: req.body.priority || 'normal',
-    recurrence,
-    project_id: req.body.project_id || null,
-    notes: req.body.notes || '',
-    is_homework: asHomeworkFlag(req.body.is_homework),
-    ts,
-  })
+  const isExam = asFlag(req.body.is_exam)
+  const isHomework = asFlag(req.body.is_homework)
+  await db
+    .prepare(
+      `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,source,created_at,updated_at)
+    VALUES (@id,@title,@status,@emoji,@due_date,@priority,@recurrence,@project_id,@notes,@is_homework,@is_exam,'local',@ts,@ts)`,
+    )
+    .run({
+      id,
+      title: title.trim(),
+      status: req.body.status || 'todo',
+      emoji: req.body.emoji || (isExam ? '📝' : isHomework ? '📚' : '📄'),
+      due_date: normalizeDueDate(req.body.due_date),
+      priority: req.body.priority || 'normal',
+      recurrence,
+      project_id: req.body.project_id || null,
+      notes: req.body.notes || '',
+      is_homework: isHomework,
+      is_exam: isExam,
+      ts,
+    })
   res.status(201).json(await db.prepare(`${withProject} WHERE t.id = ?`).get(id))
 })
 
@@ -57,7 +75,8 @@ router.patch('/:id', async (req, res) => {
   const existing = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id)
   if (!existing) return res.status(404).json(httpError('Task not found', 'NOT_FOUND'))
   const patch = { ...req.body }
-  if ('is_homework' in patch) patch.is_homework = asHomeworkFlag(patch.is_homework)
+  if ('is_homework' in patch) patch.is_homework = asFlag(patch.is_homework)
+  if ('is_exam' in patch) patch.is_exam = asFlag(patch.is_exam)
   if ('due_date' in patch) patch.due_date = normalizeDueDate(patch.due_date)
   if ('days_of_week' in patch || 'weekdays' in patch || (patch.recurrence && typeof patch.recurrence === 'object')) {
     patch.recurrence = encodeRecurrenceFields(

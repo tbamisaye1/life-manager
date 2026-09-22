@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
   notes         TEXT,
   is_homework   INTEGER NOT NULL DEFAULT 0,      -- 1 = school homework (Tonight / This week views)
+  is_exam       INTEGER NOT NULL DEFAULT 0,      -- 1 = exam / midterm / final (Exams tab)
   source        TEXT NOT NULL DEFAULT 'local',   -- local | google | notion
   external_id   TEXT,                            -- id in the source system
   completed_at  TEXT,
