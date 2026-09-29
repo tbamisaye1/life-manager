@@ -105,6 +105,18 @@ router.post('/routines/:id/exercises', async (req, res) => {
   res.status(201).json(await routineWithExercises(routine))
 })
 
+router.patch('/routines/:id/exercises/:rexId', async (req, res) => {
+  const link = await db.prepare('SELECT * FROM gym_routine_exercises WHERE id = ? AND routine_id = ?').get(req.params.rexId, req.params.id)
+  if (!link) return res.status(404).json(httpError('Routine exercise not found', 'NOT_FOUND'))
+  const fields = ['target_sets', 'sort_order'].filter((f) => f in req.body)
+  if (fields.length) {
+    const sql = `UPDATE gym_routine_exercises SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`
+    await db.prepare(sql).run({ ...req.body, id: req.params.rexId })
+  }
+  const routine = await db.prepare('SELECT * FROM gym_routines WHERE id = ?').get(req.params.id)
+  res.json(routine ? await routineWithExercises(routine) : null)
+})
+
 router.delete('/routines/:id/exercises/:rexId', async (req, res) => {
   await db.prepare('DELETE FROM gym_routine_exercises WHERE id = ?').run(req.params.rexId)
   const routine = await db.prepare('SELECT * FROM gym_routines WHERE id = ?').get(req.params.id)
@@ -271,7 +283,16 @@ router.patch('/sets/:setId', async (req, res) => {
 })
 
 router.delete('/sets/:setId', async (req, res) => {
+  const set = await db.prepare('SELECT workout_id, exercise_id FROM gym_sets WHERE id = ?').get(req.params.setId)
   await db.prepare('DELETE FROM gym_sets WHERE id = ?').run(req.params.setId)
+  if (set) {
+    const rows = await db
+      .prepare('SELECT id FROM gym_sets WHERE workout_id = ? AND exercise_id = ? ORDER BY set_number, created_at')
+      .all(set.workout_id, set.exercise_id)
+    for (let i = 0; i < rows.length; i++) {
+      await db.prepare('UPDATE gym_sets SET set_number = ? WHERE id = ?').run(i + 1, rows[i].id)
+    }
+  }
   res.json({ ok: true })
 })
 

@@ -102,12 +102,31 @@ Important details:
 
 | File | Job |
 |------|-----|
-| `server/mcp/createServer.js` | Build `McpServer`, `registerTool(...)` for tasks / today / schedule / search / exams (`is_exam`, `exam_*` filters) |
+| `server/mcp/createServer.js` | Build `McpServer`, register tasks / today / schedule / search / exams + gym |
+| `server/mcp/gymTools.js` | Full gym MCP surface (exercises, routines, workouts, sets, notes, goals) |
+| `server/lib/gymOps.js` | Shared gym domain ops (MCP + in-app assistant) |
 | `server/routes/mcp.js` | Express `POST /api/mcp` → Streamable HTTP transport |
 | `server/app.js` | Mounts `/api/mcp` behind the same PIN gate as the REST API |
 | `server/lib/pinAuth.js` | Cookie unlock, `X-Life-Manager-Pin`, `Authorization: Bearer` |
 
 REST API stays the source of truth for the web/mobile apps. MCP is a **second interface** over the same database — same data Claude uses when you chat in-app via LangGraph tools, but reachable from Claude web.
+
+---
+
+## Gym tools (Claude connector)
+
+Claude can fully manage the gym side of Life Manager:
+
+| Area | Tools |
+|------|--------|
+| **Exercises** | `list_exercises`, `get_exercise`, `resolve_exercise`, `create_exercise`, `update_exercise`, `set_exercise_goal`, `append_exercise_notes`, `archive_exercise`, `delete_exercise`, `get_exercise_history` |
+| **Logging** | `log_exercise` (primary; notation + groups), `log_set`, `log_sets`, `update_set`, `delete_set`, `clear_exercise_sets` |
+| **Workouts** | `get_gym_today`, `get_workout`, `list_workouts`, `start_workout`, `finish_workout`, `update_workout`, `delete_workout` |
+| **Routines** | `list_routines`, `get_routine`, `create_routine`, `update_routine`, `delete_routine`, `add_exercise_to_routine`, `remove_exercise_from_routine`, `update_routine_exercise`, `reorder_routine_exercises`, `create_routine_from_workout`, `get_gym_schedule` |
+
+`search` also returns matching gym exercises and routines.
+
+Local smoke: `node scripts/smoke-gym-mcp.mjs`
 
 ---
 

@@ -16,6 +16,7 @@ import { db } from '../db/index.js'
 import { newId, now, localDateStr } from '../lib/helpers.js'
 import { DUE_SORT_KEY_T, normalizeDueDate } from '../lib/dueDate.js'
 import { advanceDue, encodeRecurrenceFields, isRecurring } from '../lib/taskRecurrence.js'
+import { registerGymTools } from './gymTools.js'
 
 const recurrenceEnum = z.enum(['single', 'daily', 'weekly', 'monthly', 'yearly'])
 /** 0=Sun .. 6=Sat, same as calendar events. Also accepts mon/tue/… strings via encode. */
@@ -449,7 +450,7 @@ export function createLifeManagerMcpServer() {
   server.registerTool(
     'search',
     {
-      description: 'Quick text search across tasks and events by title fragment.',
+      description: 'Quick text search across tasks, events, gym exercises, and routines by title/name fragment.',
       inputSchema: {
         query: z.string().describe('search text'),
         limit: z.number().int().min(1).max(50).optional(),
@@ -467,9 +468,24 @@ export function createLifeManagerMcpServer() {
           `SELECT id, title, start, "end" FROM events WHERE title ILIKE ? OR notes ILIKE ? ORDER BY start DESC LIMIT ?`,
         )
         .all(q, q, limit)
-      return jsonResult({ query, tasks, events })
+      const exercises = await db
+        .prepare(
+          `SELECT id, name, category, unit, muscle_group FROM gym_exercises
+           WHERE archived = 0 AND (name ILIKE ? OR notes ILIKE ? OR muscle_group ILIKE ?)
+           ORDER BY name LIMIT ?`,
+        )
+        .all(q, q, q, limit)
+      const routines = await db
+        .prepare(
+          `SELECT id, name, weekday, emoji FROM gym_routines WHERE name ILIKE ? OR notes ILIKE ? ORDER BY name LIMIT ?`,
+        )
+        .all(q, q, limit)
+      return jsonResult({ query, tasks, events, exercises, routines })
     },
   )
+
+  // Full gym surface: exercises, routines, workouts, sets, notes, goals, schedule.
+  registerGymTools(server)
 
   return server
 }
