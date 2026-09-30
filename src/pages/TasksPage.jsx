@@ -63,7 +63,7 @@ export default function TasksPage() {
           description={filter === 'all' ? 'Press “n” or the New button to add your first task.' : filterLabel(filter)}
         />
       ) : (
-        <TaskList tasks={visible} onToggle={toggle} onOpen={setSelected} />
+        <TaskList tasks={visible} allTasks={tasks} onToggle={toggle} onOpen={setSelected} />
       )}
 
       <TaskDetailModal key={selected?.id} task={selected} open={!!selected} onClose={() => setSelected(null)} />

@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "smoke:gym": "node scripts/smoke-gym-mcp.mjs",
-    "smoke:homework": "node scripts/smoke-homework-mcp.mjs"
+    "smoke:homework": "node scripts/smoke-homework-mcp.mjs",
+    "smoke:subtasks": "node scripts/smoke-subtasks.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.1",

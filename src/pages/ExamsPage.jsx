@@ -59,7 +59,7 @@ export default function ExamsPage() {
   }
 
   const examTasks = useMemo(
-    () => tasks.filter((t) => Number(t.is_exam) === 1 || t.is_exam === true),
+    () => tasks.filter((t) => !t.parent_id && (Number(t.is_exam) === 1 || t.is_exam === true)),
     [tasks],
   )
   const visible = useMemo(() => {
@@ -151,7 +151,7 @@ export default function ExamsPage() {
           description={filterLabel(filter)}
         />
       ) : (
-        <TaskList tasks={visible} onToggle={toggle} onOpen={setSelected} />
+        <TaskList tasks={visible} allTasks={tasks} onToggle={toggle} onOpen={setSelected} />
       )}
 
       <TaskDetailModal key={selected?.id} task={selected} open={!!selected} onClose={() => setSelected(null)} />

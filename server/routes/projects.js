@@ -13,8 +13,8 @@ const ALLOWED = ['name', 'short_code', 'color', 'emoji', 'description', 'archive
 router.get('/', async (req, res) => {
   const rows = await db.prepare(`
     SELECT p.*,
-      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS open_tasks,
-      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_tasks
+      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.status != 'done') AS open_tasks,
+      (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.parent_id IS NULL AND t.status = 'done') AS done_tasks
     FROM projects p WHERE p.archived = 0
     ORDER BY p.last_worked_at DESC NULLS LAST`).all()
   res.json(rows)
@@ -23,7 +23,13 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)
   if (!project) return res.status(404).json(httpError('Project not found', 'NOT_FOUND'))
-  const tasks = await db.prepare(`SELECT * FROM tasks WHERE project_id = ? ORDER BY (due_date IS NULL), ${DUE_SORT_KEY}`).all(req.params.id)
+  const tasks = await db.prepare(`
+    SELECT t.*,
+      (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id) AS subtask_total,
+      (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id AND c.status = 'done') AS subtask_done
+    FROM tasks t
+    WHERE t.project_id = ? AND t.parent_id IS NULL
+    ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY}`).all(req.params.id)
   const events = await db.prepare("SELECT * FROM events WHERE project_id = ? ORDER BY start DESC LIMIT 20").all(req.params.id)
   res.json({ ...project, tasks, events })
 })

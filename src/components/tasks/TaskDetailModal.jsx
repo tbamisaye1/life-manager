@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { Modal, Button, Input, Select, Label } from '../ui'
 import { NestedPagesPanel } from '../pages/NestedPagesPanel'
 import { DueField } from './DueField'
+import { SubtasksEditor } from './SubtasksEditor'
 import { tasks, projects as projectsResource } from '../../hooks/resources'
 import { cn } from '../../lib/cn'
 import {
@@ -59,11 +60,13 @@ function NotesEditor({ value, onChange, placeholder }) {
 export function TaskDetailModal({ task, open, onClose }) {
   const [draft, setDraft] = useState(() => initDraft(task))
   const { data: projectList = [] } = projectsResource.useList()
+  const { data: allTasks = [] } = tasks.useList()
   const update = tasks.useUpdate()
   const remove = tasks.useRemove()
 
   if (!task) return null
 
+  const isSubtask = !!task.parent_id
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }))
   const showDays = draft.recurrenceFreq && draft.recurrenceFreq !== 'single'
 
@@ -73,27 +76,33 @@ export function TaskDetailModal({ task, open, onClose }) {
       title: draft.title,
       due_date: draft.due_date || null,
       priority: draft.priority,
-      recurrence: serializeRecurrence({
-        frequency: draft.recurrenceFreq,
-        weekdays: showDays ? draft.weekdays : null,
-      }),
+      recurrence: isSubtask
+        ? 'single'
+        : serializeRecurrence({
+            frequency: draft.recurrenceFreq,
+            weekdays: showDays ? draft.weekdays : null,
+          }),
       project_id: draft.project_id || null,
       notes: draft.notes || '',
-      is_homework: draft.is_homework ? 1 : 0,
-      is_exam: draft.is_exam ? 1 : 0,
+      is_homework: isSubtask ? 0 : draft.is_homework ? 1 : 0,
+      is_exam: isSubtask ? 0 : draft.is_exam ? 1 : 0,
     })
     onClose()
   }
 
-  const del = async () => { await remove.mutateAsync(task.id); onClose() }
+  const del = async () => {
+    await remove.mutateAsync(task.id)
+    onClose()
+  }
   const homework = !!(Number(draft.is_homework) === 1 || draft.is_homework === true)
   const exam = !!(Number(draft.is_exam) === 1 || draft.is_exam === true)
+  const parentTask = isSubtask ? allTasks.find((t) => t.id === task.parent_id) : null
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Task"
+      title={isSubtask ? 'Subtask' : 'Task'}
       className="max-w-2xl"
       bodyClassName="max-h-[min(78vh,44rem)]"
       footer={
@@ -109,37 +118,45 @@ export function TaskDetailModal({ task, open, onClose }) {
       }
     >
       <div className="space-y-4">
+        {parentTask && (
+          <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+            Part of <span className="font-medium text-zinc-700">{parentTask.title}</span>
+          </p>
+        )}
+
         <div>
           <Label>Title</Label>
           <Input value={draft.title || ''} onChange={(e) => set({ title: e.target.value })} />
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-            <input
-              type="checkbox"
-              checked={homework}
-              onChange={(e) => set({ is_homework: e.target.checked ? 1 : 0 })}
-              className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div className="leading-tight">
-              <p className="text-sm font-medium text-zinc-800">Homework</p>
-              <p className="text-xs text-zinc-500">HW Tonight / This Week</p>
-            </div>
-          </label>
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
-            <input
-              type="checkbox"
-              checked={exam}
-              onChange={(e) => set({ is_exam: e.target.checked ? 1 : 0 })}
-              className="h-4 w-4 rounded border-zinc-300 text-rose-600 focus:ring-rose-500"
-            />
-            <div className="leading-tight">
-              <p className="text-sm font-medium text-zinc-800">Exam</p>
-              <p className="text-xs text-zinc-500">Shows on the Exams tab</p>
-            </div>
-          </label>
-        </div>
+        {!isSubtask && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={homework}
+                onChange={(e) => set({ is_homework: e.target.checked ? 1 : 0 })}
+                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="leading-tight">
+                <p className="text-sm font-medium text-zinc-800">Homework</p>
+                <p className="text-xs text-zinc-500">HW Tonight / This Week</p>
+              </div>
+            </label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={exam}
+                onChange={(e) => set({ is_exam: e.target.checked ? 1 : 0 })}
+                className="h-4 w-4 rounded border-zinc-300 text-rose-600 focus:ring-rose-500"
+              />
+              <div className="leading-tight">
+                <p className="text-sm font-medium text-zinc-800">Exam</p>
+                <p className="text-xs text-zinc-500">Shows on the Exams tab</p>
+              </div>
+            </label>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <DueField
@@ -152,36 +169,61 @@ export function TaskDetailModal({ task, open, onClose }) {
             <Select value={draft.project_id || ''} onChange={(e) => set({ project_id: e.target.value })}>
               <option value="">None</option>
               {projectList.map((p) => (
-                <option key={p.id} value={p.id}>{p.emoji} {p.short_code || p.name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.emoji} {p.short_code || p.name}
+                </option>
               ))}
             </Select>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {!isSubtask && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Priority</Label>
+              <Select value={draft.priority || 'normal'} onChange={(e) => set({ priority: e.target.value })}>
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p[0].toUpperCase() + p.slice(1)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>Repeats</Label>
+              <Select
+                value={draft.recurrenceFreq || 'single'}
+                onChange={(e) =>
+                  set({
+                    recurrenceFreq: e.target.value,
+                    weekdays: e.target.value === 'single' ? [] : draft.weekdays,
+                  })
+                }
+              >
+                {RECURRENCE_FREQUENCIES.map((r) => (
+                  <option key={r} value={r}>
+                    {r === 'single' ? 'Does not repeat' : r[0].toUpperCase() + r.slice(1)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+        )}
+
+        {isSubtask && (
           <div>
             <Label>Priority</Label>
             <Select value={draft.priority || 'normal'} onChange={(e) => set({ priority: e.target.value })}>
-              {PRIORITIES.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
-            </Select>
-          </div>
-          <div>
-            <Label>Repeats</Label>
-            <Select
-              value={draft.recurrenceFreq || 'single'}
-              onChange={(e) => set({
-                recurrenceFreq: e.target.value,
-                weekdays: e.target.value === 'single' ? [] : draft.weekdays,
-              })}
-            >
-              {RECURRENCE_FREQUENCIES.map((r) => (
-                <option key={r} value={r}>{r === 'single' ? 'Does not repeat' : r[0].toUpperCase() + r.slice(1)}</option>
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p[0].toUpperCase() + p.slice(1)}
+                </option>
               ))}
             </Select>
           </div>
-        </div>
+        )}
 
-        {showDays && (
+        {showDays && !isSubtask && (
           <div>
             <Label>On these days (optional)</Label>
             <p className="mb-2 text-[11px] text-zinc-400">
@@ -194,11 +236,13 @@ export function TaskDetailModal({ task, open, onClose }) {
                   <button
                     key={d.v}
                     type="button"
-                    onClick={() => set({
-                      weekdays: on
-                        ? draft.weekdays.filter((x) => x !== d.v)
-                        : [...draft.weekdays, d.v].sort((a, b) => a - b),
-                    })}
+                    onClick={() =>
+                      set({
+                        weekdays: on
+                          ? draft.weekdays.filter((x) => x !== d.v)
+                          : [...draft.weekdays, d.v].sort((a, b) => a - b),
+                      })
+                    }
                     className={cn(
                       'h-8 w-8 rounded-full text-sm font-semibold',
                       on ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600',
@@ -212,6 +256,8 @@ export function TaskDetailModal({ task, open, onClose }) {
           </div>
         )}
 
+        {!isSubtask && task.id && <SubtasksEditor parentId={task.id} allTasks={allTasks} />}
+
         <div>
           <div className="mb-1.5 flex items-baseline justify-between gap-2">
             <Label className="mb-0">Notes / checklist</Label>
@@ -224,9 +270,7 @@ export function TaskDetailModal({ task, open, onClose }) {
           />
         </div>
 
-        {task.id && (
-          <NestedPagesPanel hostType="task" hostId={task.id} hostLabel={draft.title} />
-        )}
+        {task.id && <NestedPagesPanel hostType="task" hostId={task.id} hostLabel={draft.title} />}
       </div>
     </Modal>
   )

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- Tasks / assignments (Notion-style: due date + deadline + recurrence).
+-- Subtasks: one level only via parent_id (child rows stay off top-level lists).
 CREATE TABLE IF NOT EXISTS tasks (
   id            TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
@@ -29,12 +30,16 @@ CREATE TABLE IF NOT EXISTS tasks (
   notes         TEXT,
   is_homework   INTEGER NOT NULL DEFAULT 0,      -- 1 = school homework (Tonight / This week views)
   is_exam       INTEGER NOT NULL DEFAULT 0,      -- 1 = exam / midterm / final (Exams tab)
+  parent_id     TEXT REFERENCES tasks(id) ON DELETE CASCADE,  -- null = top-level; set = subtask
+  sort_order    INTEGER NOT NULL DEFAULT 0,      -- order among siblings (esp. subtasks)
   source        TEXT NOT NULL DEFAULT 'local',   -- local | google | notion
   external_id   TEXT,                            -- id in the source system
   completed_at  TEXT,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 
 -- Calendar events (local + synced from Google/Notion).
 CREATE TABLE IF NOT EXISTS events (

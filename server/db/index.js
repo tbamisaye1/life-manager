@@ -117,6 +117,10 @@ export async function initDb() {
   // School homework flag (Tonight / This week homework views).
   await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_homework INTEGER NOT NULL DEFAULT 0')
   await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_exam INTEGER NOT NULL DEFAULT 0')
+  // Nested subtasks (one level). Deleting a parent cascades to children.
+  await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_id TEXT REFERENCES tasks(id) ON DELETE CASCADE')
+  await client.exec('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0')
+  await client.exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)')
   // Bracket-titled events (e.g. "[All Hands]") belong on the month overview.
   await client.exec("UPDATE events SET flagship = 1 WHERE flagship = 0 AND title LIKE '[%'")
   return client.label

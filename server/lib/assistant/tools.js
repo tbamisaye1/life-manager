@@ -172,27 +172,58 @@ export function buildTools(record) {
   )
 
   const createTask = tool(
-    async ({ title, due_date, priority, project, notes, recurrence, days_of_week, emoji, is_homework, is_exam }) => {
+    async ({ title, due_date, priority, project, notes, recurrence, days_of_week, emoji, is_homework, is_exam, parent_title, subtasks }) => {
       const ts = now()
-      const id = newId()
+      let parentId = null
+      if (parent_title) {
+        const words = parent_title.trim().split(/\s+/).filter(Boolean).slice(0, 6)
+        const where = words.map(() => 'title ILIKE ?').join(' AND ') || 'title ILIKE ?'
+        const params = words.length ? words.map((w) => `%${w}%`) : [`%${parent_title}%`]
+        const parent = await db
+          .prepare(`SELECT id FROM tasks WHERE parent_id IS NULL AND ${where} ORDER BY created_at DESC LIMIT 1`)
+          .get(...params)
+        if (!parent) return JSON.stringify({ ok: false, message: `Parent task not found for "${parent_title}".` })
+        parentId = parent.id
+      }
+
       const projectId = await resolveProjectId(project)
-      const hw = is_homework ? 1 : 0
-      const exam = is_exam ? 1 : 0
-      const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
+      const hw = parentId ? 0 : is_homework ? 1 : 0
+      const exam = parentId ? 0 : is_exam ? 1 : 0
+      const recurrenceValue = parentId ? 'single' : encodeRecurrenceFields(recurrence || 'single', days_of_week)
+      const sortMax = parentId
+        ? (await db.prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM tasks WHERE parent_id = ?').get(parentId)).m
+        : -1
+      const id = newId()
       await db
-        .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,source,created_at,updated_at)
-          VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,'assistant',@ts,@ts)`)
+        .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,parent_id,sort_order,source,created_at,updated_at)
+          VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,@parent_id,@sort,'assistant',@ts,@ts)`)
         .run({
-          id, title, emoji: emoji || (exam ? '📝' : hw ? '📚' : '📌'), due: normalizeDueDate(due_date),
+          id, title, emoji: emoji || (parentId ? null : exam ? '📝' : hw ? '📚' : '📌'), due: normalizeDueDate(due_date),
           priority: priority || 'normal', recurrence: recurrenceValue,
-          pid: projectId, notes: notes || '', hw, exam, ts,
+          pid: projectId, notes: notes || '', hw, exam, parent_id: parentId, sort: sortMax + 1, ts,
         })
-      record(`✅ Added task “${title}”${priority && priority !== 'normal' ? ` (${priority})` : ''}${exam ? ' · exam' : hw ? ' · homework' : ''}`)
-      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', recurrence: recurrenceValue, is_homework: !!hw, is_exam: !!exam })
+
+      const children = []
+      if (!parentId && Array.isArray(subtasks)) {
+        let sort = 0
+        for (const raw of subtasks) {
+          const st = String(raw || '').trim()
+          if (!st) continue
+          const cid = newId()
+          await db
+            .prepare(`INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,parent_id,sort_order,source,created_at,updated_at)
+              VALUES (@id,@title,'todo',NULL,NULL,'normal','single',@pid,'',0,0,@parent_id,@sort,'assistant',@ts,@ts)`)
+            .run({ id: cid, title: st, pid: projectId, parent_id: id, sort: sort++, ts })
+          children.push({ id: cid, title: st })
+        }
+      }
+
+      record(`✅ Added task “${title}”${children.length ? ` with ${children.length} subtasks` : ''}${priority && priority !== 'normal' ? ` (${priority})` : ''}${exam ? ' · exam' : hw ? ' · homework' : ''}`)
+      return JSON.stringify({ ok: true, id, title, priority: priority || 'normal', recurrence: recurrenceValue, is_homework: !!hw, is_exam: !!exam, parent_id: parentId, subtasks: children })
     },
     {
       name: 'create_task',
-      description: 'Create a task or reminder. Set a due_date when a time is implied, priority if it sounds urgent, notes for any detail/description, recurrence (+ optional days_of_week) if it repeats, is_homework=true for school assignments, and is_exam=true for midterms/finals.',
+      description: 'Create a task or reminder. Pass subtasks as an array of titles to break a parent into checklist steps (e.g. CS PSET + email teacher / office hours / hand in). Or parent_title to add one child under an existing task. Set due_date, priority, notes, recurrence, is_homework, is_exam as needed.',
       schema: z.object({
         title: z.string(),
         due_date: z.string().optional().describe('local datetime; date-only defaults to 11:00 PM'),
@@ -204,6 +235,8 @@ export function buildTools(record) {
         emoji: z.string().optional(),
         is_homework: z.boolean().optional().describe('true for school homework'),
         is_exam: z.boolean().optional().describe('true for exams / midterms / finals'),
+        parent_title: z.string().optional().describe('add this as a subtask under a parent found by title'),
+        subtasks: z.array(z.string()).optional().describe('checklist step titles under this new parent'),
       }),
     },
   )
@@ -315,11 +348,19 @@ export function buildTools(record) {
 
   const listTasks = tool(
     async ({ filter }) => {
-      const where = filter === 'open' ? "WHERE status != 'done'" : filter === 'done' ? "WHERE status = 'done'" : ''
-      const rows = await db.prepare(`SELECT id, title, status, due_date, priority FROM tasks ${where} ORDER BY (due_date IS NULL), ${DUE_SORT_KEY} LIMIT 50`).all()
+      const where =
+        filter === 'open'
+          ? "WHERE parent_id IS NULL AND status != 'done'"
+          : filter === 'done'
+            ? "WHERE parent_id IS NULL AND status = 'done'"
+            : 'WHERE parent_id IS NULL'
+      const rows = await db.prepare(`SELECT id, title, status, due_date, priority,
+        (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = tasks.id) AS subtask_total,
+        (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = tasks.id AND c.status = 'done') AS subtask_done
+        FROM tasks ${where} ORDER BY (due_date IS NULL), ${DUE_SORT_KEY} LIMIT 50`).all()
       return JSON.stringify({ tasks: rows })
     },
-    { name: 'list_tasks', description: 'List tasks (filter: open | done | all) to see what exists.', schema: z.object({ filter: z.enum(['open', 'done', 'all']).optional() }) },
+    { name: 'list_tasks', description: 'List top-level tasks (filter: open | done | all). Subtask progress is included as subtask_total / subtask_done.', schema: z.object({ filter: z.enum(['open', 'done', 'all']).optional() }) },
   )
 
   const findEventsTool = tool(

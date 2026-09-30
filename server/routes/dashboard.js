@@ -10,6 +10,11 @@ const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); retur
 const endOfToday = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d }
 const inDays = (n) => { const d = new Date(); d.setHours(23, 59, 59, 999); d.setDate(d.getDate() + n); return d }
 
+const TASK_SELECT = `SELECT t.*, p.short_code project_code, p.color project_color,
+  (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id) AS subtask_total,
+  (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id AND c.status = 'done') AS subtask_done
+  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id`
+
 // GET /api/today — everything the user needs for "what do I do today?"
 router.get('/today', async (req, res) => {
   const todayStart = startOfToday().toISOString()
@@ -23,31 +28,32 @@ router.get('/today', async (req, res) => {
        OR (e.all_day = 0 AND e.start >= @start AND e.start <= @end)
     ORDER BY e.all_day DESC, e.start`).all({ date: todayDate, start: todayStart, end: todayEnd })
 
-  const dueToday = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND substr(t.due_date,1,10) = @date ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate })
+  // parent_id IS NULL keeps subtasks off Today buckets (they live under the parent).
+  const dueToday = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.due_date IS NOT NULL AND substr(t.due_date,1,10) = @date ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate })
 
-  const overdue = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} < @now AND substr(t.due_date,1,10) != @date ORDER BY ${DUE_SORT_KEY_T}`).all({ now: nowIso, date: todayDate })
+  const overdue = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} < @now AND substr(t.due_date,1,10) != @date ORDER BY ${DUE_SORT_KEY_T}`).all({ now: nowIso, date: todayDate })
 
   // Due in the next 7 days, excluding today + overdue — so near deadlines are visible.
-  const dueThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} > @end AND ${DUE_SORT_KEY_T} <= @weekEnd
+  const dueThisWeek = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.due_date IS NOT NULL AND ${DUE_SORT_KEY_T} > @end AND ${DUE_SORT_KEY_T} <= @weekEnd
     ORDER BY ${DUE_SORT_KEY_T}`).all({ end: todayEnd, weekEnd })
 
   // Homework due tonight (today) and homework due later this week (not including today).
   const homeworkTonight = dueToday.filter((t) => Number(t.is_homework) === 1)
-  const homeworkThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.is_homework = 1 AND t.due_date IS NOT NULL
+  const homeworkThisWeek = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.is_homework = 1 AND t.due_date IS NOT NULL
       AND substr(t.due_date,1,10) >= @date AND ${DUE_SORT_KEY_T} <= @weekEnd
     ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate, weekEnd })
 
   const examsTonight = dueToday.filter((t) => Number(t.is_exam) === 1)
-  const examsThisWeek = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
+  const examsThisWeek = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
       AND substr(t.due_date,1,10) >= @date AND ${DUE_SORT_KEY_T} <= @weekEnd
     ORDER BY ${DUE_SORT_KEY_T}`).all({ date: todayDate, weekEnd })
-  const examsUpcoming = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
+  const examsUpcoming = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.is_exam = 1 AND t.due_date IS NOT NULL
       AND ${DUE_SORT_KEY_T} >= @now
     ORDER BY ${DUE_SORT_KEY_T}`).all({ now: nowIso })
 
@@ -56,8 +62,8 @@ router.get('/today', async (req, res) => {
   const replyQueue = (await db.prepare('SELECT COUNT(*) c FROM reply_queue WHERE done = 0').get()).c
 
   // Pinned: open high/urgent tasks — surfaced in the header so they can't be missed.
-  const pinned = await db.prepare(`SELECT t.*, p.short_code project_code, p.color project_color FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.status != 'done' AND t.priority IN ('high','urgent')
+  const pinned = await db.prepare(`${TASK_SELECT}
+    WHERE t.parent_id IS NULL AND t.status != 'done' AND t.priority IN ('high','urgent')
     ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, (t.due_date IS NULL), ${DUE_SORT_KEY_T}`).all()
 
   res.json({

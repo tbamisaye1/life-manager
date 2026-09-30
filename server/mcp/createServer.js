@@ -26,8 +26,10 @@ const daysOfWeekSchema = z
   .describe('0=Sun..6=Sat (or sun/mon/…). Use with weekly/daily for e.g. Mon/Fri/Sat/Sun = [1,5,6,0]')
 
 // Qualify with t. — JOINs make bare `id` ambiguous.
-const TASK_COLS = `t.id, t.title, t.status, t.emoji, t.due_date, t.priority, t.recurrence, t.project_id, t.notes, t.is_homework, t.is_exam, t.completed_at`
-const TASK_COLS_PLAIN = `id, title, status, emoji, due_date, priority, recurrence, project_id, notes, is_homework, is_exam, completed_at`
+const TASK_COLS = `t.id, t.title, t.status, t.emoji, t.due_date, t.priority, t.recurrence, t.project_id, t.notes, t.is_homework, t.is_exam, t.parent_id, t.sort_order, t.completed_at,
+  (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id) AS subtask_total,
+  (SELECT COUNT(*)::int FROM tasks c WHERE c.parent_id = t.id AND c.status = 'done') AS subtask_done`
+const TASK_COLS_PLAIN = `id, title, status, emoji, due_date, priority, recurrence, project_id, notes, is_homework, is_exam, parent_id, sort_order, completed_at`
 
 function jsonResult(data) {
   return {
@@ -60,14 +62,87 @@ async function resolveProjectId(project) {
   return fuzzy?.id || null
 }
 
-async function findTaskByTitle(title, openOnly = false) {
+async function findTaskByTitle(title, openOnly = false, { topLevelOnly = true } = {}) {
   const words = title.trim().split(/\s+/).filter(Boolean).slice(0, 6)
   const clause = words.map(() => 'title ILIKE ?').join(' AND ') || 'title ILIKE ?'
   const params = words.length ? words.map((w) => `%${w}%`) : [`%${title}%`]
-  const guard = openOnly ? "status != 'done' AND " : ''
+  const guards = []
+  if (openOnly) guards.push("status != 'done'")
+  if (topLevelOnly) guards.push('parent_id IS NULL')
+  const guard = guards.length ? `${guards.join(' AND ')} AND ` : ''
   return db
     .prepare(`SELECT ${TASK_COLS_PLAIN} FROM tasks WHERE ${guard}${clause} ORDER BY created_at DESC LIMIT 1`)
     .get(...params)
+}
+
+async function nextSubtaskSort(parentId) {
+  const max = (
+    await db
+      .prepare('SELECT COALESCE(MAX(sort_order), -1) m FROM tasks WHERE parent_id IS NOT DISTINCT FROM @p')
+      .get({ p: parentId })
+  ).m
+  return max + 1
+}
+
+async function insertTaskRow({
+  title,
+  due_date,
+  priority,
+  projectId,
+  notes,
+  is_homework,
+  is_exam,
+  recurrence,
+  days_of_week,
+  emoji,
+  parentId,
+  source = 'mcp',
+}) {
+  const ts = now()
+  const id = newId()
+  const parent = parentId
+    ? await db.prepare('SELECT id, parent_id, project_id FROM tasks WHERE id = ?').get(parentId)
+    : null
+  if (parentId && !parent) return { ok: false, message: 'Parent task not found.' }
+  if (parent?.parent_id) return { ok: false, message: 'Subtasks cannot have their own subtasks (one level only).' }
+
+  const exam = parent ? 0 : examFlag(is_exam)
+  const hw = parent ? 0 : homeworkFlag(is_homework)
+  const recurrenceValue = parent ? 'single' : encodeRecurrenceFields(recurrence || 'single', days_of_week)
+  const sortOrder = parent ? await nextSubtaskSort(parent.id) : 0
+  const pid = projectId || parent?.project_id || null
+
+  await db
+    .prepare(
+      `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,parent_id,sort_order,source,created_at,updated_at)
+       VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,@parent_id,@sort_order,@source,@ts,@ts)`,
+    )
+    .run({
+      id,
+      title: title.trim(),
+      emoji: emoji || (parent ? null : exam ? '📝' : hw ? '📚' : '📌'),
+      due: normalizeDueDate(due_date),
+      priority: priority || 'normal',
+      recurrence: recurrenceValue,
+      pid,
+      notes: notes || '',
+      hw,
+      exam,
+      parent_id: parent?.id || null,
+      sort_order: sortOrder,
+      source,
+      ts,
+    })
+  return {
+    ok: true,
+    id,
+    title: title.trim(),
+    due_date: normalizeDueDate(due_date),
+    recurrence: recurrenceValue,
+    is_homework: !!hw,
+    is_exam: !!exam,
+    parent_id: parent?.id || null,
+  }
 }
 
 function daysUntil(due) {
@@ -138,7 +213,7 @@ export function createLifeManagerMcpServer() {
         .prepare(
           `SELECT ${TASK_COLS}, p.short_code AS project_code
            FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-           WHERE t.status != 'done' ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}`,
+           WHERE t.parent_id IS NULL AND t.status != 'done' ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}`,
         )
         .all()
       const events = await db
@@ -186,7 +261,7 @@ export function createLifeManagerMcpServer() {
     'list_tasks',
     {
       description:
-        'List tasks with a filter. Filters: open, done, all, overdue, tonight, week, homework, homework_tonight, homework_week, exam, exam_tonight, exam_week, exam_upcoming, exam_overdue.',
+        'List top-level tasks with a filter (subtasks are nested under parents; use list_subtasks). Filters: open, done, all, overdue, tonight, week, homework, homework_tonight, homework_week, exam, exam_tonight, exam_week, exam_upcoming, exam_overdue.',
       inputSchema: {
         filter: z
           .enum([
@@ -210,14 +285,16 @@ export function createLifeManagerMcpServer() {
           .optional()
           .describe('defaults to open'),
         limit: z.number().int().min(1).max(100).optional().describe('max rows, default 40'),
+        include_subtasks: z.boolean().optional().describe('if true, include child tasks in the flat list (default false)'),
       },
     },
-    async ({ filter = 'open', limit = 40 }) => {
+    async ({ filter = 'open', limit = 40, include_subtasks = false }) => {
       const rows = await db
         .prepare(
           `SELECT ${TASK_COLS}, p.short_code AS project_code
            FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-           ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}`,
+           ${include_subtasks ? '' : 'WHERE t.parent_id IS NULL'}
+           ORDER BY (t.due_date IS NULL), ${DUE_SORT_KEY_T}, t.sort_order`,
         )
         .all()
       const tasks = rows.filter((t) => matchesBucket(t, filter)).slice(0, limit)
@@ -229,7 +306,7 @@ export function createLifeManagerMcpServer() {
     'create_task',
     {
       description:
-        'Create a task. Set is_homework=true for school assignments (HW Tonight / This week). Set is_exam=true for midterms/finals (Exams tab). For repeating tasks use recurrence plus optional days_of_week (e.g. weekly + [1,5,6,0] for Mon/Fri/Sat/Sun).',
+        'Create a task. Optional subtasks[] creates checklist children in one call (e.g. parent "CS PSET 3" + subtasks ["email teacher", "office hours", "hand in"]). Or pass parent_id / parent_title to add a single child under an existing task. Set is_homework=true for school assignments. Set is_exam=true for midterms/finals. For repeating tasks use recurrence plus optional days_of_week.',
       inputSchema: {
         title: z.string(),
         due_date: z.string().optional().describe('YYYY-MM-DD or local datetime YYYY-MM-DDTHH:mm (date-only defaults to 11:00 PM)'),
@@ -241,41 +318,97 @@ export function createLifeManagerMcpServer() {
         recurrence: recurrenceEnum.optional(),
         days_of_week: daysOfWeekSchema,
         emoji: z.string().optional(),
+        parent_id: z.string().optional().describe('create as a subtask of this task id'),
+        parent_title: z.string().optional().describe('create as a subtask under a parent found by title fragment'),
+        subtasks: z
+          .array(z.string())
+          .optional()
+          .describe('titles of subtasks to create under this new parent (ignored when parent_id/parent_title is set)'),
       },
     },
-    async ({ title, due_date, priority, project, notes, is_homework, is_exam, recurrence, days_of_week, emoji }) => {
-      const ts = now()
-      const id = newId()
+    async ({
+      title,
+      due_date,
+      priority,
+      project,
+      notes,
+      is_homework,
+      is_exam,
+      recurrence,
+      days_of_week,
+      emoji,
+      parent_id,
+      parent_title,
+      subtasks,
+    }) => {
+      let parentId = parent_id || null
+      if (!parentId && parent_title) {
+        const parent = await findTaskByTitle(parent_title, false, { topLevelOnly: true })
+        if (!parent) return jsonResult({ ok: false, message: `Parent task not found for "${parent_title}".` })
+        parentId = parent.id
+      }
+
       const projectId = await resolveProjectId(project)
-      const recurrenceValue = encodeRecurrenceFields(recurrence || 'single', days_of_week)
-      const exam = examFlag(is_exam)
-      const hw = homeworkFlag(is_homework)
-      await db
+      const created = await insertTaskRow({
+        title,
+        due_date,
+        priority,
+        projectId,
+        notes,
+        is_homework,
+        is_exam,
+        recurrence,
+        days_of_week,
+        emoji,
+        parentId,
+      })
+      if (!created.ok) return jsonResult(created)
+
+      const children = []
+      if (!parentId && Array.isArray(subtasks) && subtasks.length) {
+        for (const raw of subtasks) {
+          const st = String(raw || '').trim()
+          if (!st) continue
+          const child = await insertTaskRow({ title: st, parentId: created.id })
+          if (child.ok) children.push({ id: child.id, title: child.title })
+        }
+      }
+
+      return jsonResult({
+        ...created,
+        subtasks: children,
+        subtask_count: children.length,
+      })
+    },
+  )
+
+  server.registerTool(
+    'list_subtasks',
+    {
+      description:
+        'List checklist subtasks under a parent task (by id or title fragment). Use after create_task with subtasks, or when checking progress on a multi-step assignment.',
+      inputSchema: {
+        parent_id: z.string().optional(),
+        parent_title: z.string().optional().describe('title fragment of the parent task'),
+      },
+    },
+    async ({ parent_id, parent_title }) => {
+      let parent = null
+      if (parent_id) parent = await db.prepare(`SELECT ${TASK_COLS_PLAIN} FROM tasks WHERE id = ?`).get(parent_id)
+      else if (parent_title) parent = await findTaskByTitle(parent_title, false, { topLevelOnly: true })
+      if (!parent) return jsonResult({ ok: false, message: 'Parent task not found. Pass parent_id or parent_title.' })
+      const subtasks = await db
         .prepare(
-          `INSERT INTO tasks (id,title,status,emoji,due_date,priority,recurrence,project_id,notes,is_homework,is_exam,source,created_at,updated_at)
-           VALUES (@id,@title,'todo',@emoji,@due,@priority,@recurrence,@pid,@notes,@hw,@exam,'mcp',@ts,@ts)`,
+          `SELECT ${TASK_COLS_PLAIN} FROM tasks WHERE parent_id = ? ORDER BY sort_order ASC, created_at ASC`,
         )
-        .run({
-          id,
-          title: title.trim(),
-          emoji: emoji || (exam ? '📝' : hw ? '📚' : '📌'),
-          due: normalizeDueDate(due_date),
-          priority: priority || 'normal',
-          recurrence: recurrenceValue,
-          pid: projectId,
-          notes: notes || '',
-          hw,
-          exam,
-          ts,
-        })
+        .all(parent.id)
+      const done = subtasks.filter((t) => t.status === 'done').length
       return jsonResult({
         ok: true,
-        id,
-        title: title.trim(),
-        due_date: normalizeDueDate(due_date),
-        recurrence: recurrenceValue,
-        is_homework: !!hw,
-        is_exam: !!exam,
+        parent: { id: parent.id, title: parent.title, status: parent.status },
+        count: subtasks.length,
+        done,
+        subtasks,
       })
     },
   )

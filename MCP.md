@@ -102,7 +102,7 @@ Important details:
 
 | File | Job |
 |------|-----|
-| `server/mcp/createServer.js` | Build `McpServer`, register tasks / today / schedule / search / exams + gym |
+| `server/mcp/createServer.js` | Build `McpServer`, register tasks / today / schedule / search / exams + gym + subtasks |
 | `server/mcp/gymTools.js` | Full gym MCP surface (exercises, routines, workouts, sets, notes, goals) |
 | `server/lib/gymOps.js` | Shared gym domain ops (MCP + in-app assistant) |
 | `server/routes/mcp.js` | Express `POST /api/mcp` → Streamable HTTP transport |
@@ -110,6 +110,21 @@ Important details:
 | `server/lib/pinAuth.js` | Cookie unlock, `X-Life-Manager-Pin`, `Authorization: Bearer` |
 
 REST API stays the source of truth for the web/mobile apps. MCP is a **second interface** over the same database — same data Claude uses when you chat in-app via LangGraph tools, but reachable from Claude web.
+
+---
+
+## Task subtasks (MCP)
+
+Parent tasks can hold one level of checklist children (`parent_id` on `tasks`).
+
+| Tool | Use |
+|------|-----|
+| `create_task` | Pass `subtasks: ["email teacher", "office hours", "hand in"]` on a new parent, or `parent_title` / `parent_id` to add one child |
+| `list_subtasks` | Progress under a parent (`parent_title` or `parent_id`) |
+| `list_tasks` / `get_today` | Top-level only by default (children stay nested) |
+| `complete_task` | Works on parents or children (prefer `id` for a specific subtask) |
+
+Local smoke: `node scripts/smoke-subtasks.mjs`
 
 ---
 

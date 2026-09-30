@@ -17,6 +17,33 @@ function isExam(task) {
   return Number(task.is_exam) === 1 || task.is_exam === true
 }
 
+/** Top-level tasks only (subtasks nest under a parent and stay out of list filters). */
+export function isTopLevel(task) {
+  return !task?.parent_id
+}
+
+/** Children of a parent, sorted by sort_order then created_at. */
+export function subtasksOf(tasks, parentId) {
+  return (tasks || [])
+    .filter((t) => t.parent_id === parentId)
+    .slice()
+    .sort((a, b) => {
+      const ao = Number(a.sort_order) || 0
+      const bo = Number(b.sort_order) || 0
+      if (ao !== bo) return ao - bo
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''))
+    })
+}
+
+export function subtaskProgress(task, allTasks) {
+  const kids = allTasks ? subtasksOf(allTasks, task.id) : null
+  const total = kids ? kids.length : Number(task.subtask_total) || 0
+  const done = kids
+    ? kids.filter((t) => t.status === 'done').length
+    : Number(task.subtask_done) || 0
+  return { total, done }
+}
+
 /** Parse `next_3` / `tasks_next_3` / `homework_next_3` / `exam_next_3` (and legacy hw_ aliases). */
 export function parseNextFilter(filter) {
   const m = String(filter || '').match(/^(?:(homework|hw|tasks|exam|exams)_)?next_(\d+)$/)
@@ -111,6 +138,7 @@ export function matchesFilter(task, filter) {
 
 export function filterTasks(tasks, filter) {
   return tasks
+    .filter((t) => isTopLevel(t))
     .filter((t) => matchesFilter(t, filter))
     .slice()
     .sort((a, b) => {
@@ -120,29 +148,30 @@ export function filterTasks(tasks, filter) {
 }
 
 export function countForFilter(tasks, filter) {
-  return tasks.filter((t) => matchesFilter(t, filter)).length
+  return tasks.filter((t) => isTopLevel(t) && matchesFilter(t, filter)).length
 }
 
 export function taskCounts(tasks) {
+  const top = tasks.filter((t) => isTopLevel(t))
   return {
-    all: tasks.filter((t) => t.status !== 'done').length,
-    overdue: tasks.filter((t) => matchesFilter(t, 'overdue')).length,
-    tonight: tasks.filter((t) => matchesFilter(t, 'tonight')).length,
-    week: tasks.filter((t) => matchesFilter(t, 'week')).length,
-    homework: tasks.filter((t) => matchesFilter(t, 'homework')).length,
-    homework_tonight: tasks.filter((t) => matchesFilter(t, 'homework_tonight')).length,
-    homework_week: tasks.filter((t) => matchesFilter(t, 'homework_week')).length,
-    exam: tasks.filter((t) => matchesFilter(t, 'exam')).length,
-    exam_tonight: tasks.filter((t) => matchesFilter(t, 'exam_tonight')).length,
-    exam_week: tasks.filter((t) => matchesFilter(t, 'exam_week')).length,
-    exam_upcoming: tasks.filter((t) => matchesFilter(t, 'exam_upcoming')).length,
-    exam_overdue: tasks.filter((t) => matchesFilter(t, 'exam_overdue')).length,
-    done: tasks.filter((t) => t.status === 'done').length,
+    all: top.filter((t) => t.status !== 'done').length,
+    overdue: top.filter((t) => matchesFilter(t, 'overdue')).length,
+    tonight: top.filter((t) => matchesFilter(t, 'tonight')).length,
+    week: top.filter((t) => matchesFilter(t, 'week')).length,
+    homework: top.filter((t) => matchesFilter(t, 'homework')).length,
+    homework_tonight: top.filter((t) => matchesFilter(t, 'homework_tonight')).length,
+    homework_week: top.filter((t) => matchesFilter(t, 'homework_week')).length,
+    exam: top.filter((t) => matchesFilter(t, 'exam')).length,
+    exam_tonight: top.filter((t) => matchesFilter(t, 'exam_tonight')).length,
+    exam_week: top.filter((t) => matchesFilter(t, 'exam_week')).length,
+    exam_upcoming: top.filter((t) => matchesFilter(t, 'exam_upcoming')).length,
+    exam_overdue: top.filter((t) => matchesFilter(t, 'exam_overdue')).length,
+    done: top.filter((t) => t.status === 'done').length,
   }
 }
 
 export function examCounts(tasks) {
-  const exams = tasks.filter((t) => isExam(t))
+  const exams = tasks.filter((t) => isTopLevel(t) && isExam(t))
   return {
     exam_upcoming: exams.filter((t) => matchesFilter(t, 'exam_upcoming')).length,
     exam_week: exams.filter((t) => matchesFilter(t, 'exam_week')).length,
