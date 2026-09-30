@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS projects (
 
 -- Tasks / assignments (Notion-style: due date + deadline + recurrence).
 -- Subtasks: one level only via parent_id (child rows stay off top-level lists).
+-- Index on parent_id is created in initDb after ALTER migrations so existing
+-- production DBs (CREATE TABLE IF NOT EXISTS no-op) still boot cleanly.
 CREATE TABLE IF NOT EXISTS tasks (
   id            TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
@@ -38,8 +40,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 
 -- Calendar events (local + synced from Google/Notion).
 CREATE TABLE IF NOT EXISTS events (
