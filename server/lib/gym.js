@@ -17,6 +17,29 @@ export async function lastPerformance(exerciseId, beforeWorkoutId = null) {
   return { workoutId: lastWorkout.id, date: lastWorkout.date, sets }
 }
 
+/** Compact last-session blurb for routine start pickers. */
+export function formatLastSummary(last, unit = 'kg') {
+  if (!last?.sets?.length) return null
+  const weighted = !['bodyweight', 'time', 'band'].includes(unit)
+  const parts = last.sets.map((s) => {
+    if (weighted && s.weight != null && s.reps != null) return `${s.weight}${unit}×${s.reps}`
+    if (s.reps != null) return unit === 'time' ? `${s.reps}s` : `${s.reps}`
+    if (weighted && s.weight != null) return `${s.weight}${unit}`
+    return null
+  }).filter(Boolean)
+  // Collapse identical working sets: 60kg×8, 60kg×8, 60kg×8 → 3×60kg×8
+  const unique = [...new Set(parts)]
+  let summary
+  if (unique.length === 1 && parts.length > 1) summary = `${parts.length}×${unique[0]}`
+  else summary = parts.slice(0, 4).join(', ') + (parts.length > 4 ? '…' : '')
+  return {
+    date: last.date,
+    workout_id: last.workoutId,
+    set_count: last.sets.length,
+    summary: summary || `${last.sets.length} sets`,
+  }
+}
+
 /**
  * Suggest what to do THIS session for an exercise, from last time's numbers.
  * Heuristic: hit the top of your rep range across all sets -> go up a weight

@@ -256,6 +256,7 @@ CREATE TABLE IF NOT EXISTS gym_workouts (
   routine_id    TEXT REFERENCES gym_routines(id) ON DELETE SET NULL,
   title         TEXT,
   notes         TEXT,
+  planned_exercise_ids TEXT,                        -- JSON array of exercise ids (subset of routine)
   completed     INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL

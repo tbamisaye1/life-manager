@@ -110,6 +110,8 @@ export async function initDb() {
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_type TEXT')
   await client.exec('ALTER TABLE pages ADD COLUMN IF NOT EXISTS host_id TEXT')
   await client.exec('ALTER TABLE gym_exercises ADD COLUMN IF NOT EXISTS target_weight REAL')
+  // Optional subset of routine exercises for this session (JSON array of exercise ids).
+  await client.exec('ALTER TABLE gym_workouts ADD COLUMN IF NOT EXISTS planned_exercise_ids TEXT')
   // Per-instance flagship override — survives Google sync.
   await client.exec('ALTER TABLE events ADD COLUMN IF NOT EXISTS flagship_override INTEGER NOT NULL DEFAULT 0')
   // School homework flag (Tonight / This week homework views).

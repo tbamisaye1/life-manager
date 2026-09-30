@@ -2,9 +2,20 @@ import { Router } from 'express'
 import { db } from '../db/index.js'
 import { newId, now, buildUpdate, mapRows, decodeBooleans, localDateStr } from '../lib/helpers.js'
 import { httpError } from '../lib/http.js'
-import { suggestForExercise } from '../lib/gym.js'
+import { suggestForExercise, lastPerformance, formatLastSummary } from '../lib/gym.js'
 
 const router = Router()
+
+function parsePlannedIds(raw) {
+  if (!raw) return null
+  if (Array.isArray(raw)) return raw.filter(Boolean)
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : null
+  } catch {
+    return null
+  }
+}
 
 // ---------------- Exercise library ----------------
 const EX_ALLOWED = ['name', 'category', 'muscle_group', 'unit', 'rep_low', 'rep_high', 'default_sets', 'target_weight', 'increment', 'notes', 'archived']
@@ -58,17 +69,31 @@ router.get('/exercises/:id/history', async (req, res) => {
 })
 
 // ---------------- Routines (day templates) ----------------
-async function routineWithExercises(routine) {
+async function routineWithExercises(routine, { withLast = false } = {}) {
   const exercises = await db.prepare(`
     SELECT re.id AS routine_exercise_id, re.target_sets, re.sort_order, e.*
     FROM gym_routine_exercises re JOIN gym_exercises e ON e.id = re.exercise_id
     WHERE re.routine_id = ? ORDER BY re.sort_order`).all(routine.id)
-  return { ...routine, exercises }
+  if (!withLast) return { ...routine, exercises }
+  const enriched = await Promise.all(
+    exercises.map(async (ex) => {
+      const last = await lastPerformance(ex.id)
+      return { ...ex, last: formatLastSummary(last, ex.unit) }
+    }),
+  )
+  return { ...routine, exercises: enriched }
 }
 
 router.get('/routines', async (req, res) => {
   const routines = await db.prepare('SELECT * FROM gym_routines ORDER BY (weekday IS NULL), weekday, sort_order').all()
-  res.json(await Promise.all(routines.map(routineWithExercises)))
+  res.json(await Promise.all(routines.map((r) => routineWithExercises(r))))
+})
+
+/** Single routine with last-session blurb per exercise — for the start-workout picker. */
+router.get('/routines/:id', async (req, res) => {
+  const routine = await db.prepare('SELECT * FROM gym_routines WHERE id = ?').get(req.params.id)
+  if (!routine) return res.status(404).json(httpError('Routine not found', 'NOT_FOUND'))
+  res.json(await routineWithExercises(routine, { withLast: true }))
 })
 
 router.post('/routines', async (req, res) => {
@@ -195,17 +220,39 @@ router.get('/workouts', async (req, res) => {
   res.json(mapRows(rows, ['completed']))
 })
 
-// Full logging view: each exercise with last-time numbers + a suggested target
-// for THIS session, plus whatever has already been logged.
+async function plannedExercisesForWorkout(workout) {
+  const plannedIds = parsePlannedIds(workout.planned_exercise_ids)
+  if (workout.routine_id) {
+    let planned = await db.prepare(`SELECT e.*, re.target_sets FROM gym_routine_exercises re JOIN gym_exercises e ON e.id = re.exercise_id
+      WHERE re.routine_id = ? ORDER BY re.sort_order`).all(workout.routine_id)
+    if (plannedIds?.length) {
+      const allow = new Set(plannedIds)
+      planned = planned.filter((e) => allow.has(e.id))
+      const have = new Set(planned.map((e) => e.id))
+      for (const id of plannedIds) {
+        if (have.has(id)) continue
+        const ex = await db.prepare('SELECT * FROM gym_exercises WHERE id = ?').get(id)
+        if (ex) planned.push(ex)
+      }
+    }
+    return planned
+  }
+  if (plannedIds?.length) {
+    const rows = []
+    for (const id of plannedIds) {
+      const ex = await db.prepare('SELECT * FROM gym_exercises WHERE id = ?').get(id)
+      if (ex) rows.push(ex)
+    }
+    return rows
+  }
+  return []
+}
+
 router.get('/workouts/:id', async (req, res) => {
   const workout = await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(req.params.id)
   if (!workout) return res.status(404).json(httpError('Workout not found', 'NOT_FOUND'))
 
-  // Exercises = routine's exercises + any already logged ad-hoc.
-  const planned = workout.routine_id
-    ? await db.prepare(`SELECT e.*, re.target_sets FROM gym_routine_exercises re JOIN gym_exercises e ON e.id = re.exercise_id
-        WHERE re.routine_id = ? ORDER BY re.sort_order`).all(workout.routine_id)
-    : []
+  const planned = await plannedExercisesForWorkout(workout)
   const loggedExerciseIds = (await db.prepare('SELECT DISTINCT exercise_id FROM gym_sets WHERE workout_id = ?').all(req.params.id)).map((r) => r.exercise_id)
   const ids = new Set(planned.map((e) => e.id))
   const extras = await Promise.all(
@@ -227,26 +274,46 @@ router.get('/workouts/:id', async (req, res) => {
     }
   }))
 
-  res.json({ ...decodeBooleans(workout, ['completed']), exercises })
+  const decoded = decodeBooleans(workout, ['completed'])
+  decoded.planned_exercise_ids = parsePlannedIds(workout.planned_exercise_ids)
+  res.json({ ...decoded, exercises })
 })
 
 router.post('/workouts', async (req, res) => {
   const ts = now(); const id = newId()
   const routine = req.body.routine_id ? await db.prepare('SELECT name FROM gym_routines WHERE id = ?').get(req.body.routine_id) : null
-  await db.prepare(`INSERT INTO gym_workouts (id,date,routine_id,title,notes,completed,created_at,updated_at)
-    VALUES (@id,@date,@routine_id,@title,'',0,@ts,@ts)`).run({
+  const exerciseIds = Array.isArray(req.body.exercise_ids)
+    ? req.body.exercise_ids.filter(Boolean)
+    : null
+  // Empty array = nothing selected. Omit / null = all routine exercises.
+  if (exerciseIds && exerciseIds.length === 0) {
+    return res.status(400).json(httpError('Pick at least one exercise', 'VALIDATION'))
+  }
+  const plannedJson = exerciseIds ? JSON.stringify(exerciseIds) : null
+  await db.prepare(`INSERT INTO gym_workouts (id,date,routine_id,title,notes,completed,planned_exercise_ids,created_at,updated_at)
+    VALUES (@id,@date,@routine_id,@title,'',0,@planned,@ts,@ts)`).run({
     id, date: req.body.date || localDateStr(), routine_id: req.body.routine_id || null,
-    title: req.body.title || routine?.name || 'Workout', ts,
+    title: req.body.title || routine?.name || 'Workout', planned: plannedJson, ts,
   })
-  res.status(201).json(decodeBooleans(await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(id), ['completed']))
+  const row = await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(id)
+  const decoded = decodeBooleans(row, ['completed'])
+  decoded.planned_exercise_ids = parsePlannedIds(row.planned_exercise_ids)
+  res.status(201).json(decoded)
 })
 
 router.patch('/workouts/:id', async (req, res) => {
   const patch = { ...req.body }
   if ('completed' in patch) patch.completed = patch.completed ? 1 : 0
-  const upd = buildUpdate('gym_workouts', req.params.id, patch, ['title', 'notes', 'completed', 'routine_id'])
+  if (Array.isArray(patch.exercise_ids)) {
+    patch.planned_exercise_ids = JSON.stringify(patch.exercise_ids.filter(Boolean))
+    delete patch.exercise_ids
+  }
+  const upd = buildUpdate('gym_workouts', req.params.id, patch, ['title', 'notes', 'completed', 'routine_id', 'planned_exercise_ids'])
   if (upd) await db.prepare(upd.sql).run(upd.params)
-  res.json(decodeBooleans(await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(req.params.id), ['completed']))
+  const row = await db.prepare('SELECT * FROM gym_workouts WHERE id = ?').get(req.params.id)
+  const decoded = decodeBooleans(row, ['completed'])
+  if (row) decoded.planned_exercise_ids = parsePlannedIds(row.planned_exercise_ids)
+  res.json(decoded)
 })
 
 router.delete('/workouts/:id', async (req, res) => {
@@ -273,7 +340,6 @@ router.post('/workouts/:id/sets', async (req, res) => {
 router.patch('/sets/:setId', async (req, res) => {
   const patch = { ...req.body }
   if ('done' in patch) patch.done = patch.done ? 1 : 0
-  // gym_sets has no updated_at column, so write the allowed fields directly.
   const fields = ['weight', 'reps', 'rpe', 'done', 'set_number', 'notes'].filter((f) => f in patch)
   if (fields.length) {
     const sql = `UPDATE gym_sets SET ${fields.map((f) => `${f} = @${f}`).join(', ')} WHERE id = @id`
