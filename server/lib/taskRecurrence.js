@@ -7,7 +7,10 @@
  *
  * Weekdays use the same 0=Sun..6=Sat convention as events / Google BYDAY.
  * Tasks are single-row: completing one rolls due_date to the next match.
+ * Completing also skips Yale College recesses / no-class days (see yaleRecess.js).
  */
+
+import { isYaleNoClassDay } from './yaleRecess.js'
 
 const FREQUENCIES = new Set(['single', 'daily', 'weekly', 'monthly', 'yearly'])
 const DOW_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
@@ -84,16 +87,14 @@ export function isRecurring(value) {
 }
 
 /**
- * Advance a due date by one occurrence, preserving date-only vs timed ISO.
- * With weekdays, walks forward day-by-day to the next matching weekday.
+ * One raw step forward (no recess skip). Used internally by advanceDue.
  */
-export function advanceDue(due, recurrence) {
+function advanceDueOnce(due, recurrence) {
   const { frequency, weekdays } = parseRecurrence(recurrence)
   const dateOnly = !due || due.length <= 10
   const base = due ? new Date(dateOnly ? `${due.slice(0, 10)}T12:00:00` : due) : new Date()
 
   if (weekdays?.length) {
-    // Start tomorrow (or next minute after a timed due) and find the next match.
     const cur = new Date(base)
     cur.setDate(cur.getDate() + 1)
     for (let i = 0; i < 8; i++) {
@@ -102,7 +103,6 @@ export function advanceDue(due, recurrence) {
       }
       cur.setDate(cur.getDate() + 1)
     }
-    // Should be unreachable if weekdays is non-empty.
     return formatDue(cur, due, dateOnly)
   }
 
@@ -111,6 +111,19 @@ export function advanceDue(due, recurrence) {
   else if (frequency === 'weekly') base.setDate(base.getDate() + 7)
   else base.setDate(base.getDate() + 1) // daily
   return formatDue(base, due, dateOnly)
+}
+
+/**
+ * Advance a due date by one occurrence, preserving date-only vs timed ISO.
+ * With weekdays, walks forward day-by-day to the next matching weekday.
+ * Skips Yale recesses / no-class days so weekly homework does not land on break.
+ */
+export function advanceDue(due, recurrence) {
+  let next = advanceDueOnce(due, recurrence)
+  for (let i = 0; i < 14 && isYaleNoClassDay(next); i++) {
+    next = advanceDueOnce(next, recurrence)
+  }
+  return next
 }
 
 function formatDue(d, originalDue, dateOnly) {
